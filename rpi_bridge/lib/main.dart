@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
 
 void main() {
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -301,24 +302,192 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   }
 }
 
-class WiFiSetupPage extends StatelessWidget {
+class WiFiSetupPage extends StatefulWidget {
   final BluetoothConnection connection;
   final BluetoothDevice device;
   const WiFiSetupPage({Key? key, required this.connection, required this.device}) : super(key: key);
 
   @override
+  State<WiFiSetupPage> createState() => _WiFiSetupPageState();
+}
+
+class _WiFiSetupPageState extends State<WiFiSetupPage> {
+  final TextEditingController _ssidController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isSending = false;
+  String? _statusMessage;
+  bool _passwordVisible = false;
+  String _response = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForResponses();
+  }
+
+  void _listenForResponses() {
+    widget.connection.input?.listen((data) {
+      final message = String.fromCharCodes(data).trim();
+      debugPrint('Received from Pi: $message');
+      setState(() {
+        _response += '$message\n';
+        if (message.contains('SUCCESS')) {
+          _statusMessage = '✓ WiFi configured successfully!';
+          _isSending = false;
+        } else if (message.contains('ERROR')) {
+          _statusMessage = '✗ Configuration failed: $message';
+          _isSending = false;
+        }
+      });
+    }).onDone(() {
+      debugPrint('Connection closed');
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'Connection closed';
+          _isSending = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _sendWiFiCredentials() async {
+    final ssid = _ssidController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (ssid.isEmpty) {
+      setState(() => _statusMessage = 'Please enter WiFi name (SSID)');
+      return;
+    }
+
+    setState(() {
+      _isSending = true;
+      _statusMessage = 'Sending WiFi credentials...';
+      _response = '';
+    });
+
+    try {
+      // Send credentials as JSON format
+      final payload = 'WIFI:$ssid:$password\n';
+      widget.connection.output.add(Uint8List.fromList(payload.codeUnits));
+      await widget.connection.output.allSent;
+      
+      debugPrint('Sent WiFi credentials: SSID=$ssid');
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Error sending credentials: $e';
+        _isSending = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ssidController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Setup ${device.name}')),
-      body: Center(
+      appBar: AppBar(title: Text('Setup ${widget.device.name}')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 80),
+            const Icon(Icons.wifi, color: Colors.blue, size: 80),
             const SizedBox(height: 20),
-            const Text('Bluetooth Connected!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text(
+              'Configure WiFi',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
-            Text('RFCOMM Link Established with ${device.name}'),
+            Text(
+              'Enter your WiFi credentials to configure ${widget.device.name}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 40),
+            TextField(
+              controller: _ssidController,
+              decoration: const InputDecoration(
+                labelText: 'WiFi Name (SSID)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.wifi),
+                hintText: 'Enter network name',
+              ),
+              enabled: !_isSending,
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _passwordController,
+              obscureText: !_passwordVisible,
+              decoration: InputDecoration(
+                labelText: 'WiFi Password',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.lock),
+                hintText: 'Enter password',
+                suffixIcon: IconButton(
+                  icon: Icon(_passwordVisible ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
+                ),
+              ),
+              enabled: !_isSending,
+            ),
+            const SizedBox(height: 30),
+            ElevatedButton.icon(
+              onPressed: _isSending ? null : _sendWiFiCredentials,
+              icon: _isSending 
+                ? const SizedBox(
+                    width: 20, 
+                    height: 20, 
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.send),
+              label: Text(_isSending ? 'Configuring...' : 'Configure WiFi'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (_statusMessage != null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _statusMessage!.contains('✓') ? Colors.green[50] : Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _statusMessage!.contains('✓') ? Colors.green : Colors.orange,
+                  ),
+                ),
+                child: Text(
+                  _statusMessage!,
+                  style: TextStyle(
+                    color: _statusMessage!.contains('✓') ? Colors.green[900] : Colors.orange[900],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            if (_response.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Pi Response:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(_response, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
