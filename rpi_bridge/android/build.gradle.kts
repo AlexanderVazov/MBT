@@ -50,6 +50,14 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Some transitive Android modules (for example older Bluetooth plugins) still
+// declare Java 8 source/target and trigger noisy warnings on newer JDKs.
+subprojects {
+    tasks.withType<org.gradle.api.tasks.compile.JavaCompile>().configureEach {
+        options.compilerArgs.add("-Xlint:-options")
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

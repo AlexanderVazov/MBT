@@ -3,11 +3,211 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:convert';
 
-void main() {
+// Settings Manager - Central storage for all app settings
+class SettingsManager {
+  static final SettingsManager _instance = SettingsManager._internal();
+  factory SettingsManager() => _instance;
+  SettingsManager._internal();
+
+  Map<String, dynamic> _settings = {
+    'language': 'en',
+    'ttsSpeed': 100.0,
+    'favoriteFoods': '',
+    'allergies': <String>[],
+  };
+
+  Future<File> _getSettingsFile() async {
+    final directory = await getApplicationDocumentsDirectory();
+    return File('${directory.path}/app_settings.json');
+  }
+
+  Future<void> loadSettings() async {
+    try {
+      final file = await _getSettingsFile();
+      if (await file.exists()) {
+        final contents = await file.readAsString();
+        _settings = jsonDecode(contents);
+        debugPrint('📖 Loaded settings: $_settings');
+      } else {
+        debugPrint('📄 No settings file found, using defaults');
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading settings: $e');
+    }
+  }
+
+  Future<void> saveSettings() async {
+    try {
+      final file = await _getSettingsFile();
+      await file.writeAsString(jsonEncode(_settings));
+      debugPrint('✅ Saved settings: $_settings');
+    } catch (e) {
+      debugPrint('❌ Error saving settings: $e');
+    }
+  }
+
+  String get language => _settings['language'] as String;
+  set language(String value) {
+    _settings['language'] = value;
+    saveSettings();
+  }
+
+  double get ttsSpeed => _settings['ttsSpeed'] as double;
+  set ttsSpeed(double value) {
+    _settings['ttsSpeed'] = value;
+    saveSettings();
+  }
+
+  String get favoriteFoods => _settings['favoriteFoods'] as String;
+  set favoriteFoods(String value) {
+    _settings['favoriteFoods'] = value;
+    saveSettings();
+  }
+
+  List<String> get allergies => List<String>.from(_settings['allergies'] as List);
+  set allergies(List<String> value) {
+    _settings['allergies'] = value;
+    saveSettings();
+  }
+
+  void toggleAllergy(String allergy, bool value) {
+    final currentAllergies = allergies;
+    if (value && !currentAllergies.contains(allergy)) {
+      currentAllergies.add(allergy);
+    } else if (!value) {
+      currentAllergies.remove(allergy);
+    }
+    allergies = currentAllergies;
+  }
+
+  bool hasAllergy(String allergy) {
+    return allergies.contains(allergy);
+  }
+
+  Map<String, dynamic> getAllSettings() => Map.from(_settings);
+}
+
+// Simple localization class
+class AppLocalizations {
+  final Locale locale;
+  AppLocalizations(this.locale);
+
+  static AppLocalizations of(BuildContext context) {
+    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
+  }
+
+  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
+
+  static final Map<String, Map<String, String>> _localizedValues = {
+    'en': {
+      'appTitle': 'RPI Bridge',
+      'connect': 'Connect',
+      'foodPreferences': 'Food Preferences',
+      'settings': 'Settings',
+      'scanning': 'Scanning...',
+      'refreshBondedDevices': 'Refresh Bonded Devices',
+      'creatingRFCOMM': 'Creating RFCOMM Link...',
+      'status': 'Status',
+      'bondedDevices': 'Bonded Devices:',
+      'unknown': 'Unknown',
+      'setup': 'Setup',
+      'wifiSSID': 'WiFi SSID',
+      'enterSSID': 'Enter WiFi network name',
+      'wifiPassword': 'WiFi Password',
+      'enterPassword': 'Enter WiFi password',
+      'configuring': 'Configuring...',
+      'configureWiFi': 'Configure WiFi',
+      'piResponse': 'Pi Response:',
+      'favoriteFoods': 'Favorite Foods',
+      'enterFavoriteFoods': 'Enter your favorite foods...',
+      'allergiesIntolerances': 'Allergies & Intolerances',
+      'selectAllergies': 'Select any allergies or intolerances you have:',
+      'dairy': 'Dairy',
+      'eggs': 'Eggs',
+      'peanuts': 'Peanuts',
+      'treeNuts': 'Tree Nuts',
+      'soy': 'Soy',
+      'wheatGluten': 'Wheat/Gluten',
+      'fish': 'Fish',
+      'shellfish': 'Shellfish',
+      'sesame': 'Sesame',
+      'lactose': 'Lactose',
+      'language': 'Language',
+      'english': 'English',
+      'bulgarian': 'Bulgarian',
+      'ttsSpeed': 'TTS Speed',
+    },
+    'bg': {
+      'appTitle': 'RPI Мост',
+      'connect': 'Свързване',
+      'foodPreferences': 'Хранителни Предпочитания',
+      'settings': 'Настройки',
+      'scanning': 'Сканиране...',
+      'refreshBondedDevices': 'Обнови Сдвоени Устройства',
+      'creatingRFCOMM': 'Създаване на RFCOMM Връзка...',
+      'status': 'Състояние',
+      'bondedDevices': 'Сдвоени Устройства:',
+      'unknown': 'Неизвестно',
+      'setup': 'Настройка',
+      'wifiSSID': 'WiFi SSID',
+      'enterSSID': 'Въведете име на WiFi мрежа',
+      'wifiPassword': 'WiFi Парола',
+      'enterPassword': 'Въведете WiFi парола',
+      'configuring': 'Конфигуриране...',
+      'configureWiFi': 'Конфигурирай WiFi',
+      'piResponse': 'Отговор от Pi:',
+      'favoriteFoods': 'Любими Храни',
+      'enterFavoriteFoods': 'Въведете вашите любими храни...',
+      'allergiesIntolerances': 'Алергии и Непоносимости',
+      'selectAllergies': 'Изберете алергии или непоносимости:',
+      'dairy': 'Млечни Продукти',
+      'eggs': 'Яйца',
+      'peanuts': 'Фъстъци',
+      'treeNuts': 'Ядки',
+      'soy': 'Соя',
+      'wheatGluten': 'Пшеница/Глутен',
+      'fish': 'Риба',
+      'shellfish': 'Миди',
+      'sesame': 'Сусам',
+      'lactose': 'Лактоза',
+      'language': 'Език',
+      'english': 'Английски',
+      'bulgarian': 'Български',
+      'ttsSpeed': 'Скорост на Глас',
+    },
+  };
+
+  String translate(String key) {
+    return _localizedValues[locale.languageCode]?[key] ?? key;
+  }
+}
+
+class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
+  const _AppLocalizationsDelegate();
+
+  @override
+  bool isSupported(Locale locale) => ['en', 'bg'].contains(locale.languageCode);
+
+  @override
+  Future<AppLocalizations> load(Locale locale) async {
+    return AppLocalizations(locale);
+  }
+
+  @override
+  bool shouldReload(_AppLocalizationsDelegate old) => false;
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SettingsManager().loadSettings();
+  
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     debugPrint('FLUTTER ERROR: ${details.exception}');
@@ -15,13 +215,49 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
+  
+  static void setLocale(BuildContext context, Locale newLocale) {
+    _MyAppState? state = context.findAncestorStateOfType<_MyAppState>();
+    state?.setLocale(newLocale);
+  }
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late Locale _locale;
+
+  @override
+  void initState() {
+    super.initState();
+    _locale = Locale(SettingsManager().language);
+  }
+
+  void setLocale(Locale locale) {
+    setState(() {
+      _locale = locale;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'RPI Bridge',
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      locale: _locale,
+      supportedLocales: const [
+        Locale('en', ''),
+        Locale('bg', ''),
+      ],
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: const MainScreen(),
     );
   }
@@ -43,16 +279,17 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('RPI Bridge')),
+      appBar: AppBar(title: Text(localizations.translate('appTitle'))),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.bluetooth), label: 'Connect'),
-          BottomNavigationBarItem(icon: Icon(Icons.edit), label: 'Text Box'),
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Empty'),
+        items: [
+          BottomNavigationBarItem(icon: const Icon(Icons.bluetooth), label: localizations.translate('connect')),
+          BottomNavigationBarItem(icon: const Icon(Icons.local_dining), label: localizations.translate('foodPreferences')),
+          BottomNavigationBarItem(icon: const Icon(Icons.settings), label: localizations.translate('settings')),
         ],
       ),
     );
@@ -88,7 +325,6 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
       final bonded = await serial.bondDeviceAtAddress(device.address);
       debugPrint('Bond refresh result for ${device.address}: $bonded');
       
-      // Wait for the bonding process to fully complete before returning
       if (bonded == true) {
         debugPrint('Waiting for bond to stabilize...');
         await Future.delayed(const Duration(milliseconds: 2000));
@@ -115,7 +351,6 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   Future<void> _initBluetooth() async {
     if (!Platform.isAndroid) return;
     try {
-      // Requesting multiple permissions to ensure the stack is fully authorized
       await [
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
@@ -130,7 +365,6 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   Future<void> _scanForDevices() async {
     setState(() { _isScanning = true; _devicesList = []; _lastError = null; });
     try {
-      // Ensure we aren't already discovering
       await FlutterBluetoothSerial.instance.cancelDiscovery();
       final results = await FlutterBluetoothSerial.instance.getBondedDevices();
       setState(() { _devicesList = results; });
@@ -153,63 +387,27 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
 
     try {
       final serial = FlutterBluetoothSerial.instance;
-      final bondState = await serial.getBondStateForAddress(device.address);
-      debugPrint('Bond state before connect: $bondState');
-
-      // 1. CRITICAL: Cancel any background discovery
       await serial.cancelDiscovery();
-      
-      // 2. Wait for the adapter to settle after pairing
-      debugPrint('Waiting for Bluetooth adapter to stabilize...');
       await Future.delayed(const Duration(milliseconds: 2500));
 
-      // 3. Clean up any stale connection objects
       if (_connection != null) {
         try { await _connection!.finish(); } catch (_) {}
         _connection = null;
       }
 
-      // 4. Try to connect with retry logic
       BluetoothConnection connection;
       try {
-        debugPrint('Attempting first connection to ${device.address}...');
         connection = await _connectSocket(device.address);
-        debugPrint('First connection attempt succeeded!');
       } catch (firstError) {
-        debugPrint('First connect attempt failed: $firstError');
         final msg = firstError.toString().toLowerCase();
-        
-        // If read failed or timeout, it likely means the Pi server isn't running
         if (msg.contains('read failed') || msg.contains('timeout')) {
-          debugPrint('Detected connection failure (Pi server may not be running)');
-          debugPrint('Attempting bond refresh as fallback...');
-          
           final refreshed = await _refreshBond(device);
-          if (!refreshed) {
-            throw Exception(
-              'Connection failed. Make sure the Bluetooth server is running on the Raspberry Pi. '
-              'Error: ${_compactError(firstError)}'
-            );
-          }
-
-          debugPrint('Retrying connection after bond refresh...');
-          
-          try {
-            connection = await _connectSocket(device.address);
-            debugPrint('Second connection attempt succeeded!');
-          } catch (secondError) {
-            throw Exception(
-              'Connection failed after bond refresh. '
-              'Ensure the Raspberry Pi Bluetooth server (bt_server.py) is running. '
-              'Error: ${_compactError(secondError)}'
-            );
-          }
+          if (!refreshed) rethrow;
+          connection = await _connectSocket(device.address);
         } else {
           rethrow;
         }
       }
-
-      debugPrint('Connection Success!');
 
       if (mounted) {
         setState(() {
@@ -231,9 +429,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
           _isConnecting = false;
           final errorMsg = e.toString();
           if (errorMsg.contains('read failed') || errorMsg.contains('timeout')) {
-            _lastError = 'Cannot connect to ${device.name}. '
-                'The Raspberry Pi Bluetooth server is not running. '
-                'Run "sudo python3 bt_server.py" on the Pi first, then retry.';
+            _lastError = 'Cannot connect to ${device.name}. Ensure Pi server is running.';
           } else {
             _lastError = 'Connection failed: ${_compactError(e)}';
           }
@@ -244,6 +440,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -252,14 +449,14 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
           ElevatedButton.icon(
             onPressed: _isScanning || _isConnecting ? null : _scanForDevices,
             icon: const Icon(Icons.bluetooth_searching),
-            label: Text(_isScanning ? 'Scanning...' : 'Refresh Bonded Devices'),
+            label: Text(_isScanning ? localizations.translate('scanning') : localizations.translate('refreshBondedDevices')),
           ),
           const SizedBox(height: 10),
           if (_isConnecting) 
-             const Row(children: [
-               SpinKitThreeBounce(color: Colors.blue, size: 20),
-               SizedBox(width: 10),
-               Text('Creating RFCOMM Link...', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
+             Row(children: [
+              const SpinKitThreeBounce(color: Colors.blue, size: 20),
+              const SizedBox(width: 10),
+              Text(localizations.translate('creatingRFCOMM'), style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
              ]),
           if (_lastError != null)
             Container(
@@ -270,15 +467,10 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.red.shade200)
               ),
-              child: Text(
-                'Status: $_lastError',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
-              ),
+              child: Text('${localizations.translate('status')}: $_lastError', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.red, fontSize: 13)),
             ),
           const Divider(height: 30),
-          const Text('Bonded Devices:', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(localizations.translate('bondedDevices'), style: const TextStyle(fontWeight: FontWeight.bold)),
           Expanded(
             child: ListView.builder(
               itemCount: _devicesList.length,
@@ -287,7 +479,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
                 return Card(
                   child: ListTile(
                     leading: const Icon(Icons.memory),
-                    title: Text(device.name ?? 'Unknown'),
+                    title: Text(device.name ?? localizations.translate('unknown')),
                     subtitle: Text(device.address),
                     trailing: _isConnecting ? null : const Icon(Icons.login),
                     onTap: _isConnecting ? null : () => _connectToDevice(device),
@@ -366,7 +558,6 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
     });
 
     try {
-      // Send credentials as JSON format
       final payload = 'WIFI:$ssid:$password\n';
       widget.connection.output.add(Uint8List.fromList(payload.codeUnits));
       await widget.connection.output.allSent;
@@ -389,8 +580,9 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text('Setup ${widget.device.name}')),
+      appBar: AppBar(title: Text('${localizations.translate('setup')} ${widget.device.name}')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -398,10 +590,10 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
           children: [
             const Icon(Icons.wifi, color: Colors.blue, size: 80),
             const SizedBox(height: 20),
-            const Text(
-              'Configure WiFi',
+            Text(
+              localizations.translate('configureWiFi'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Text(
@@ -412,11 +604,11 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
             const SizedBox(height: 40),
             TextField(
               controller: _ssidController,
-              decoration: const InputDecoration(
-                labelText: 'WiFi Name (SSID)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.wifi),
-                hintText: 'Enter network name',
+              decoration: InputDecoration(
+                labelText: localizations.translate('wifiSSID'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.wifi),
+                hintText: localizations.translate('enterSSID'),
               ),
               enabled: !_isSending,
             ),
@@ -425,10 +617,10 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
               controller: _passwordController,
               obscureText: !_passwordVisible,
               decoration: InputDecoration(
-                labelText: 'WiFi Password',
+                labelText: localizations.translate('wifiPassword'),
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.lock),
-                hintText: 'Enter password',
+                hintText: localizations.translate('enterPassword'),
                 suffixIcon: IconButton(
                   icon: Icon(_passwordVisible ? Icons.visibility : Icons.visibility_off),
                   onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
@@ -446,7 +638,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.send),
-              label: Text(_isSending ? 'Configuring...' : 'Configure WiFi'),
+              label: Text(_isSending ? localizations.translate('configuring') : localizations.translate('configureWiFi')),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 16),
@@ -482,7 +674,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Pi Response:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text('${localizations.translate('piResponse')}', style: const TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Text(_response, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
                   ],
@@ -503,57 +695,214 @@ class TextBoxPage extends StatefulWidget {
 
 class _TextBoxPageState extends State<TextBoxPage> {
   final TextEditingController _favoriteFoodsController = TextEditingController();
-  final TextEditingController _allergiesController = TextEditingController();
+  final SettingsManager _settings = SettingsManager();
+  
+  // Track allergy/intolerance selections using localization keys
+  final Map<String, bool> _allergies = {
+    'dairy': false,
+    'eggs': false,
+    'peanuts': false,
+    'treeNuts': false,
+    'soy': false,
+    'wheatGluten': false,
+    'fish': false,
+    'shellfish': false,
+    'sesame': false,
+    'lactose': false,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  void _loadPreferences() {
+    // Load favorite foods
+    _favoriteFoodsController.text = _settings.favoriteFoods;
+    
+    // Load allergies
+    for (var key in _allergies.keys) {
+      _allergies[key] = _settings.hasAllergy(key);
+    }
+    
+    setState(() {});
+    debugPrint('📖 Loaded food preferences');
+  }
+
+  void _saveFavoriteFoods(String value) {
+    _settings.favoriteFoods = value;
+  }
+
+  void _saveAllergy(String key, bool value) {
+    _settings.toggleAllergy(key, value);
+  }
 
   @override
   void dispose() {
     _favoriteFoodsController.dispose();
-    _allergiesController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Favorite Foods',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _favoriteFoodsController,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Enter your favorite foods...',
+    final localizations = AppLocalizations.of(context);
+    
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              localizations.translate('favoriteFoods'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            maxLines: 3,
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Allergies',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _allergiesController,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Enter any allergies...',
+            const SizedBox(height: 8),
+            TextField(
+              controller: _favoriteFoodsController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: localizations.translate('enterFavoriteFoods'),
+              ),
+              maxLines: 3,
+              onChanged: (value) => _saveFavoriteFoods(value),
             ),
-            maxLines: 3,
-          ),
-        ],
+            const SizedBox(height: 24),
+            Text(
+              localizations.translate('allergiesIntolerances'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              localizations.translate('selectAllergies'),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8.0,
+              runSpacing: 8.0,
+              children: _allergies.keys.map((allergyKey) {
+                return FilterChip(
+                  label: Text(localizations.translate(allergyKey)),
+                  selected: _allergies[allergyKey]!,
+                  onSelected: (bool selected) {
+                    setState(() {
+                      _allergies[allergyKey] = selected;
+                    });
+                    _saveAllergy(allergyKey, selected);
+                  },
+                  selectedColor: Colors.orange.shade300,
+                  checkmarkColor: Colors.white,
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class EmptyPage extends StatelessWidget {
+class EmptyPage extends StatefulWidget {
   const EmptyPage({Key? key}) : super(key: key);
   @override
-  Widget build(BuildContext context) => const Center(child: Text('Empty Page'));
+  State<EmptyPage> createState() => _EmptyPageState();
+}
+
+class _EmptyPageState extends State<EmptyPage> {
+  final SettingsManager _settings = SettingsManager();
+  late String _selectedLanguage;
+  late double _ttsSpeed;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  void _loadSettings() {
+    _selectedLanguage = _settings.language;
+    _ttsSpeed = _settings.ttsSpeed;
+    setState(() {});
+    debugPrint('📖 Loaded settings page');
+  }
+
+  void _saveLanguage(String language) {
+    _settings.language = language;
+  }
+
+  void _saveTTSSpeed(double speed) {
+    _settings.ttsSpeed = speed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
+    
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            localizations.translate('language'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          DropdownButton<String>(
+            value: _selectedLanguage,
+            isExpanded: true,
+            items: [
+              DropdownMenuItem(value: 'en', child: Text(localizations.translate('english'))),
+              DropdownMenuItem(value: 'bg', child: Text(localizations.translate('bulgarian'))),
+            ],
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  _selectedLanguage = newValue;
+                });
+                _saveLanguage(newValue);
+                // Change the app locale
+                MyApp.setLocale(context, Locale(newValue));
+              }
+            },
+          ),
+          const SizedBox(height: 32),
+          Text(
+            localizations.translate('ttsSpeed'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: _ttsSpeed,
+                  min: 1.0,
+                  max: 200.0,
+                  divisions: 199,
+                  label: '${_ttsSpeed.toInt()}%',
+                  onChanged: (double value) {
+                    setState(() {
+                      _ttsSpeed = value;
+                    });
+                    _saveTTSSpeed(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 60,
+                child: Text(
+                  '${_ttsSpeed.toInt()}%',
+                  style: const TextStyle(fontSize: 16),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
