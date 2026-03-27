@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -32,30 +31,23 @@ export class RelativesController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a new relative account and link them to the current user',
+    summary:
+      'Create a blind user and link to the current relative. If the user email already exists, sends an invite email instead.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Relative created and linked successfully',
+    description: 'Blind user created and linked successfully',
   })
-  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({
+    status: 400,
+    description: 'Blind user with this email already exists',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async create(
     @Request() req: RequestWithUser,
     @Body() dto: CreateRelativeDto,
   ) {
     return this.relativesService.create(req.user.id, dto);
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'Get all relatives linked to the current user' })
-  @ApiResponse({
-    status: 200,
-    description: 'List of relative links with user details',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async findAll(@Request() req: RequestWithUser) {
-    return this.relativesService.findAllByUser(req.user.id);
   }
 
   @Delete(':id')
@@ -77,10 +69,13 @@ export class RelativesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Send an email invite to a user to become a relative (token valid for 5 minutes)',
+      'Send an invite email to an existing blind user so they can accept and link with this relative (token valid for 5 minutes)',
   })
   @ApiResponse({ status: 204, description: 'Invite email sent successfully' })
-  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({
+    status: 404,
+    description: 'Blind user with this email not found',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async invite(@Request() req: RequestWithUser, @Body() dto: InviteUserDto) {
     return this.relativesService.invite(req.user.id, dto);
