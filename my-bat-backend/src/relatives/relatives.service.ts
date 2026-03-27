@@ -97,8 +97,8 @@ export class RelativesService {
       }),
     );
 
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    const inviteUrl = `${frontendUrl}/accept-invite?token=${token}`;
+    const deepLinkBase = this.configService.get<string>('DEEP_LINK_BASE_URL');
+    const inviteUrl = `${deepLinkBase}/invite?token=${token}`;
     const relativeName =
       [relative.firstName, relative.lastName].filter(Boolean).join(' ') ||
       relative.email;
