@@ -13,6 +13,7 @@ import { SendgridModule } from './sendgrid/sendgrid.module';
 import { RelativesModule } from './relatives/relatives.module';
 import { FoodModule } from './food/food.module';
 import { SosModule } from './sos/sos.module';
+import { WellKnownModule } from './well-known/well-known.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SosModule } from './sos/sos.module';
     RelativesModule,
     FoodModule,
     SosModule,
+    WellKnownModule,
   ],
   controllers: [],
   providers: [
