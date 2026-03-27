@@ -12,15 +12,31 @@ This system allows you to configure WiFi on your Raspberry Pi using a mobile app
 
 ## Setup on Raspberry Pi
 
-### 1. Start the Bluetooth Server
+### 1. Start the Servers
+
+You need to run two servers:
+
 ```bash
+# Terminal 1: Start the Bluetooth Server (handles WiFi configuration)
 sudo python3 bt_server.py
+
+# Terminal 2: Start the Status Server (provides internet connectivity status)
+sudo python3 status_server.py
 ```
 
-The server will:
-- Create a Bluetooth SPP (Serial Port Profile) service
-- Wait for incoming connections
-- Automatically handle WiFi configuration requests
+Alternatively, you can run both in the background:
+```bash
+sudo python3 bt_server.py &
+sudo python3 status_server.py &
+```
+
+### About the Status Server
+
+The status server (`status_server.py`) runs on port 8888 and provides:
+- `GET /internet_status` - Returns whether the Pi has internet connectivity
+- `GET /health` - Simple health check
+
+This allows the mobile app to check if the Pi is connected to the internet **without requiring a Bluetooth connection**. The app displays a green/red indicator on the WiFi setup button showing the Pi's internet status.
 
 ### 2. Ensure Bluetooth is Properly Configured
 ```bash
@@ -40,14 +56,23 @@ sudo bluetoothctl
 
 ### 2. Connect
 - Tap on your Pi device
-- Wait for "Bluetooth Connected!" message
+- Wait for connection to be established
+- The device will be shown in a green connected panel
 
-### 3. Configure WiFi
+### 3. Check Internet Status
+- Look at the WiFi Setup button - it shows an icon:
+  - 🟢 Green WiFi icon: Pi is connected to internet
+  - 🔴 Red WiFi icon: Pi is NOT connected to internet
+  - ⚪ Grey WiFi icon: Status unknown (status server not reachable)
+- This status is checked automatically every 10 seconds
+
+### 4. Configure WiFi
+- Tap the "WiFi Setup" button
 - Enter your WiFi network name (SSID)
 - Enter your WiFi password
 - Tap "Configure WiFi"
 
-### 4. Monitor Progress
+### 5. Monitor Progress
 The app will show real-time updates:
 - "Generating WPA configuration..."
 - "Backing up current configuration..."

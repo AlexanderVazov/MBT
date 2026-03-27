@@ -202,6 +202,8 @@ def handle_client(sock):
                 # Check if this is WiFi configuration data
                 if message.startswith('WIFI:'):
                     handle_wifi_config(sock, message)
+                elif message == 'GET_IP':
+                    handle_get_ip(sock)
                 else:
                     # Echo back a response for other messages
                     response = f"Pi received: {message}\n"
@@ -220,6 +222,31 @@ def handle_client(sock):
             print(f"[ERROR] Bluetooth error during communication: {e}")
     except Exception as e:
         print(f"[ERROR] Error handling client: {e}")
+
+def handle_get_ip(sock):
+    """Handle IP address request from client"""
+    import subprocess
+    
+    try:
+        # Get all IP addresses
+        result = subprocess.run(['hostname', '-I'], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        
+        if result.returncode == 0 and result.stdout.strip():
+            # Get the first IP (usually the WiFi/Ethernet IP)
+            ip_address = result.stdout.strip().split()[0]
+            response = f"IP:{ip_address}\n"
+            sock.send(response.encode('utf-8'))
+            print(f"[INFO] Sent IP address: {ip_address}")
+        else:
+            sock.send(b"IP:unknown\n")
+            print("[WARNING] Could not determine IP address")
+    except Exception as e:
+        error_msg = f"ERROR: Failed to get IP: {e}\n"
+        sock.send(error_msg.encode('utf-8'))
+        print(f"[ERROR] {error_msg.strip()}")
 
 def handle_wifi_config(sock, message):
     """Handle WiFi configuration request"""
