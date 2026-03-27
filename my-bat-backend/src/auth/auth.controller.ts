@@ -6,7 +6,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { RequestWithUser } from 'src/common';
+import { RequestWithUser, UserRoles } from 'src/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -18,14 +18,16 @@ import {
 import { LocalAuthGuard, RefreshAuthGuard } from './guards';
 import { LoginDto, RegisterDto, RequestWithSession } from './dtos';
 import { AuthService } from './auth.service';
+import { Role } from './decorators';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Role(UserRoles.Relative)
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user' })
+  @ApiOperation({ summary: 'Register a new relative user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   async register(@Body() dto: RegisterDto) {
