@@ -12,6 +12,7 @@ import { SeedingModule } from './seeding/seeding.module';
 import { SendgridModule } from './sendgrid/sendgrid.module';
 import { RelativesModule } from './relatives/relatives.module';
 import { FoodModule } from './food/food.module';
+import { SosModule } from './sos/sos.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { FoodModule } from './food/food.module';
     SendgridModule,
     RelativesModule,
     FoodModule,
+    SosModule,
   ],
   controllers: [],
   providers: [

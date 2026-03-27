@@ -6,7 +6,7 @@ import { MailDataRequired, MailService } from '@sendgrid/mail';
 
 import { Templates } from './enum';
 import { SendgridErrorCodes } from './errors';
-import { ResetPasswordType, SendInvitationType, SetPasswordType } from './types';
+import { ResetPasswordType, SendInvitationType, SendSosType, SetPasswordType } from './types';
 
 @Injectable()
 export class SendgridService {
@@ -57,6 +57,25 @@ export class SendgridService {
       from: this.from,
       to: dto.email,
       subject: `${dto.relativeName} invited you to join MBT`,
+      html,
+    };
+    return await this.sendMail(mail);
+  }
+
+  async sendSos(dto: SendSosType) {
+    const templatePath = path.join(process.cwd(), 'templates', 'sos.html');
+    let html = fs.readFileSync(templatePath, 'utf-8');
+    html = html
+      .replace(/\{\{userName\}\}/g, dto.userName)
+      .replace(/\{\{latitude\}\}/g, String(dto.latitude))
+      .replace(/\{\{longitude\}\}/g, String(dto.longitude))
+      .replace(/\{\{alertTime\}\}/g, dto.alertTime)
+      .replace(/\{\{mapsUrl\}\}/g, dto.mapsUrl);
+
+    const mail: MailDataRequired = {
+      from: this.from,
+      to: dto.email,
+      subject: `🚨 SOS Alert — ${dto.userName} needs help!`,
       html,
     };
     return await this.sendMail(mail);
