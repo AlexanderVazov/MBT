@@ -9,6 +9,8 @@ import { UsersModule } from './users/users.module';
 import { typeOrmAsyncConfig } from './config';
 import { AuthModule } from './auth/auth.module';
 import { SeedingModule } from './seeding/seeding.module';
+import { SendgridModule } from './sendgrid/sendgrid.module';
+import { RelativesModule } from './relatives/relatives.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { SeedingModule } from './seeding/seeding.module';
     UsersModule,
     AuthModule,
     SeedingModule,
+    SendgridModule,
+    RelativesModule,
   ],
   controllers: [],
   providers: [
