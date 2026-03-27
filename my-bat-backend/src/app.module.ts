@@ -14,6 +14,7 @@ import { RelativesModule } from './relatives/relatives.module';
 import { FoodModule } from './food/food.module';
 import { SosModule } from './sos/sos.module';
 import { WellKnownModule } from './well-known/well-known.module';
+import { InviteRedirectModule } from './invite-redirect/invite-redirect.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { WellKnownModule } from './well-known/well-known.module';
     FoodModule,
     SosModule,
     WellKnownModule,
+    InviteRedirectModule,
   ],
   controllers: [],
   providers: [
