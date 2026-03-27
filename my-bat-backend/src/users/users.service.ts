@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RegisterDto } from 'src/auth/dtos';
+import { UserRoles } from 'src/common';
 
 import { UserEntity } from './entities';
 import { UserErrorCodes } from './errors';
@@ -25,7 +26,7 @@ export class UsersService {
     });
   }
 
-  async create(dto: RegisterDto) {
+  async create(dto: RegisterDto, role: UserRoles = UserRoles.Relative) {
     if (await this.checkEmail(dto.email)) {
       throw new BadRequestException(
         UserErrorCodes.UserWithThisEmailAlreadyCreatedError,
@@ -34,6 +35,7 @@ export class UsersService {
 
     const user = this.usersRepository.create({
       ...dto,
+      role,
     });
 
     return await this.usersRepository.save(user);

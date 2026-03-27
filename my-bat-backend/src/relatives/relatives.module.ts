@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { UserEntity } from 'src/users/entities';
 import { SendgridModule } from 'src/sendgrid/sendgrid.module';
+
 import { RelativeEntity, InvitationEntity } from './entities';
 import { RelativesService } from './relatives.service';
 import { RelativesController } from './relatives.controller';

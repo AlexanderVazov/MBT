@@ -1,12 +1,16 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { nanoid } from 'nanoid';
 import { Repository } from 'typeorm';
-import { UserRoles } from 'src/common';
 import { UserEntity } from 'src/users/entities';
-import { UserErrorCodes } from 'src/users/errors';
+import { UserRoles } from 'src/common';
 import { SendgridService } from 'src/sendgrid/sendgrid.service';
 import { ConfigService } from '@nestjs/config';
+
 import { RelativeEntity, InvitationEntity } from './entities';
 import { CreateRelativeDto, InviteUserDto, AcceptInviteDto } from './dtos';
 import { RelativesErrorCodes } from './errors';
@@ -26,31 +30,37 @@ export class RelativesService {
     private readonly configService: ConfigService,
   ) {}
 
-  async create(userId: string, dto: CreateRelativeDto) {
-    const exists = await this.usersRepository.exists({
+  async create(relativeId: string, dto: CreateRelativeDto) {
+    const existingUser = await this.usersRepository.findOne({
       where: { email: dto.email },
     });
-    if (exists) {
+
+    if (existingUser) {
       throw new BadRequestException(
-        UserErrorCodes.UserWithThisEmailAlreadyCreatedError,
+        RelativesErrorCodes.BlindUserAlreadyExistsError,
       );
     }
 
-    const relativeUser = await this.usersRepository.save(
-      this.usersRepository.create({ ...dto, role: UserRoles.Relative }),
+    const user = await this.usersRepository.save(
+      this.usersRepository.create({ ...dto, role: UserRoles.User }),
     );
 
-    const link = this.relativesRepository.create({
-      userId,
-      relativeId: relativeUser.id,
-    });
+    await this.relativesRepository.save(
+      this.relativesRepository.create({ userId: user.id, relativeId }),
+    );
 
-    await this.relativesRepository.save(link);
-
-    return relativeUser;
+    return user;
   }
 
-  async findAllByUser(userId: string) {
+  async findAllByUser(relativeId: string) {
+    const links = await this.relativesRepository.find({
+      where: { relativeId },
+      relations: ['user'],
+    });
+    return links.map((l) => l.user);
+  }
+
+  async findRelativesOfUser(userId: string) {
     const links = await this.relativesRepository.find({
       where: { userId },
       relations: ['relative'],
@@ -63,6 +73,14 @@ export class RelativesService {
   }
 
   async invite(relativeId: string, dto: InviteUserDto) {
+    const blindUser = await this.usersRepository.findOne({
+      where: { email: dto.email, role: UserRoles.User },
+    });
+
+    if (!blindUser) {
+      throw new NotFoundException(RelativesErrorCodes.BlindUserNotFoundError);
+    }
+
     const relative = await this.usersRepository.findOne({
       where: { id: relativeId },
     });
