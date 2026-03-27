@@ -6,8 +6,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, RolesGuard } from 'src/auth/guards';
-import { RequestWithUser } from 'src/common';
+import { RequestWithUser, UserRoles } from 'src/common';
 import { RelativesService } from 'src/relatives/relatives.service';
+import { Role } from 'src/auth/decorators';
 
 import { UsersService } from './users.service';
 
@@ -29,6 +30,7 @@ export class UsersController {
     return req.user;
   }
 
+  @Role(UserRoles.User)
   @Get('my-relatives')
   @ApiOperation({
     summary: 'Get all relatives linked to the current blind user',

@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { SeedingModule } from './seeding/seeding.module';
 import { SendgridModule } from './sendgrid/sendgrid.module';
 import { RelativesModule } from './relatives/relatives.module';
+import { FoodModule } from './food/food.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { RelativesModule } from './relatives/relatives.module';
     SeedingModule,
     SendgridModule,
     RelativesModule,
+    FoodModule,
   ],
   controllers: [],
   providers: [

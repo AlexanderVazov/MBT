@@ -17,7 +17,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, RolesGuard } from 'src/auth/guards';
-import { RequestWithUser } from 'src/common';
+import { RequestWithUser, UserRoles } from 'src/common';
+import { Role } from 'src/auth/decorators';
 
 import { RelativesService } from './relatives.service';
 import { AcceptInviteDto, CreateRelativeDto, InviteUserDto } from './dtos';
@@ -81,6 +82,7 @@ export class RelativesController {
     return this.relativesService.invite(req.user.id, dto);
   }
 
+  @Role(UserRoles.User)
   @Post('accept-invite')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
