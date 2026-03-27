@@ -24,7 +24,6 @@ export class AuthService {
 
   async register(dto: RegisterDto) {
     const user = await this.usersService.create(dto);
-
     return await this.login(user);
   }
 
