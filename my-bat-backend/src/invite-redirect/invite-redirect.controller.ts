@@ -15,11 +15,13 @@ export class InviteRedirectController {
     description: 'HTML page that redirects to the app',
   })
   redirect(@Query('token') token: string) {
-    const deepLink = `mbt://invite?token=${token}`;
+    const mbtLink = `mbt://invite?token=${token}`;
+    // Chrome on Android blocks JS redirects to custom schemes.
+    // intent:// URI tells Chrome to launch the app directly.
+    const intentLink = `intent://invite?token=${token}#Intent;scheme=mbt;package=com.example.rpi_bridge;end`;
 
     return `<!DOCTYPE html>
 <html lang="en">
-
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -60,8 +62,15 @@ export class InviteRedirectController {
       }
     </style>
     <script>
+      var isAndroid = /android/i.test(navigator.userAgent);
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
       window.onload = function () {
-        window.location.href = '${deepLink}';
+        if (isAndroid) {
+          window.location.href = '${intentLink}';
+        } else if (isIOS) {
+          window.location.href = '${mbtLink}';
+        }
       };
     </script>
   </head>
@@ -69,7 +78,7 @@ export class InviteRedirectController {
     <div class="card">
       <h1>Opening MBT App...</h1>
       <p>You should be redirected to the app automatically.</p>
-      <a href="${deepLink}">Tap here if the app doesn't open</a>
+      <a href="${intentLink}">Tap here if the app doesn't open</a>
     </div>
   </body>
 </html>`;
