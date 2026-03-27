@@ -2,6 +2,7 @@
 """
 Script to analyze an image using Google Gemini API
 Uploads the image and asks Gemini what it sees
+WITH TEXT-TO-SPEECH SUPPORT
 """
 
 import google.genai as genai
@@ -10,6 +11,7 @@ import sys
 import base64
 import mimetypes
 from pathlib import Path
+from tts_helper import speak_text
 
 # Configure the API key
 api_key = os.getenv('GOOGLE_API_KEY')
@@ -73,6 +75,12 @@ try:
     print("Gemini Analysis:")
     print("-" * 50)
     print(response.text)
+    print("-" * 50)
+    
+    # Speak the response
+    print("\n[Speaking response...]")
+    speak_text(response.text)
+    
 except Exception as e:
     print(f"Error: {e}")
 

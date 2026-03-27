@@ -2,6 +2,7 @@
 """
 Raspberry Pi Camera Script
 Captures a photo from the RPi camera module and analyzes it with Google Gemini API
+WITH TEXT-TO-SPEECH SUPPORT
 """
 
 import google.genai as genai
@@ -10,6 +11,7 @@ import sys
 import base64
 import mimetypes
 from datetime import datetime
+from tts_helper import speak_text
 
 # Try importing picamera2 first (newer), fallback to picamera
 try:
@@ -93,6 +95,11 @@ try:
     print(response.text)
     print("-" * 50)
     print(f"Image saved at: {image_path}")
+    
+    # Speak the response
+    print("\n[Speaking response...]")
+    speak_text(response.text)
+    
 except Exception as e:
     print(f"Error: {e}")
 finally:
