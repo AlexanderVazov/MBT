@@ -8,6 +8,7 @@ import bluetooth
 import sys
 import signal
 import time
+import subprocess
 
 server_sock = None
 client_sock = None
@@ -30,28 +31,89 @@ def cleanup(signum=None, frame=None):
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
+def setup_bluetooth():
+    """Ensure Bluetooth is powered on and discoverable"""
+    print("[INFO] Setting up Bluetooth adapter...")
+    
+    commands = [
+        ("sudo hciconfig hci0 up", "Powering on Bluetooth adapter"),
+        ("sudo hciconfig hci0 piscan", "Making Bluetooth discoverable"),
+        ("sudo hciconfig hci0 sspmode 1", "Enabling Simple Pairing mode"),
+    ]
+    
+    for cmd, description in commands:
+        try:
+            print(f"[INFO] {description}...")
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print(f"[SUCCESS] {description}")
+            else:
+                print(f"[WARNING] {description} failed: {result.stderr.strip()}")
+        except subprocess.TimeoutExpired:
+            print(f"[WARNING] {description} timed out")
+        except Exception as e:
+            print(f"[WARNING] {description} error: {e}")
+    
+    time.sleep(1)  # Give Bluetooth time to settle
+    print("[SUCCESS] Bluetooth adapter setup complete\n")
+
+def get_bluetooth_address():
+    """Get Bluetooth adapter address using hciconfig"""
+    try:
+        result = subprocess.run(['hciconfig', 'hci0'], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        
+        # Parse output to find BD Address
+        for line in result.stdout.split('\n'):
+            if 'BD Address:' in line:
+                addr = line.split('BD Address:')[1].strip().split()[0]
+                return addr
+        
+        return None
+    except Exception as e:
+        print(f"[WARNING] Could not get BD address via hciconfig: {e}")
+        return None
+
 def start_server():
     global server_sock, client_sock
     
+    # Setup Bluetooth adapter first
+    setup_bluetooth()
+    
     # Get local Bluetooth adapter address
+    local_addr = None
     try:
+        # First try PyBluez method
         local_addr, local_name = bluetooth.read_local_bdaddr()
         print(f"[INFO] Local Bluetooth adapter: {local_addr}")
     except Exception as e:
-        print(f"[ERROR] Could not read local Bluetooth adapter: {e}")
-        print("[FIX] Make sure Bluetooth is enabled and you're running with sudo")
-        sys.exit(1)
+        print(f"[WARNING] PyBluez read_local_bdaddr failed: {e}")
+        # Try alternative method using hciconfig
+        local_addr = get_bluetooth_address()
+        if local_addr:
+            print(f"[INFO] Local Bluetooth adapter (via hciconfig): {local_addr}")
+        else:
+            print("[INFO] Could not determine adapter address, using fallback binding")
     
     # Create the Bluetooth socket using RFCOMM protocol
     server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
     
-    # Bind to the local adapter explicitly
+    # Bind to the local adapter
     try:
-        server_sock.bind((local_addr, bluetooth.PORT_ANY))
+        if local_addr:
+            server_sock.bind((local_addr, bluetooth.PORT_ANY))
+            print(f"[INFO] Bound to adapter {local_addr}")
+        else:
+            # Fallback: bind to any available adapter
+            server_sock.bind(("", bluetooth.PORT_ANY))
+            print("[INFO] Bound to default adapter")
     except Exception as e:
-        print(f"[WARNING] Could not bind to adapter {local_addr}: {e}")
+        print(f"[WARNING] Could not bind explicitly: {e}")
         print("[INFO] Trying fallback binding method...")
         server_sock.bind(("", bluetooth.PORT_ANY))
+        print("[SUCCESS] Fallback binding succeeded")
     
     port = server_sock.getsockname()[1]
     
@@ -187,85 +249,171 @@ def handle_wifi_config(sock, message):
         sock.send(error_msg.encode('utf-8'))
         print(f"[ERROR] {error_msg.strip()}")
 
-def configure_wifi(sock, ssid, password):
-    """Configure WiFi on Raspberry Pi"""
+def uses_networkmanager():
+    """Check if system uses NetworkManager for WiFi"""
+    import subprocess
+    try:
+        result = subprocess.run(['systemctl', 'is-active', 'NetworkManager'],
+                              capture_output=True, text=True, timeout=5)
+        return result.stdout.strip() == 'active'
+    except:
+        return False
+
+def configure_wifi_networkmanager(sock, ssid, password):
+    """Configure WiFi using NetworkManager (nmcli)"""
+    import subprocess
+    
+    sock.send("Using NetworkManager to configure WiFi...\n".encode('utf-8'))
+    
+    # Scan for networks first
+    sock.send("Scanning for WiFi networks...\n".encode('utf-8'))
+    subprocess.run(['sudo', 'nmcli', 'device', 'wifi', 'rescan'],
+                  capture_output=True, timeout=10)
+    time.sleep(3)  # Give time for scan to complete
+    
+    # Delete existing connection with same name if exists
+    subprocess.run(['sudo', 'nmcli', 'connection', 'delete', ssid],
+                  capture_output=True, timeout=10)
+    
+    # Try direct connect first (works if network is visible)
+    sock.send(f"Connecting to WiFi network: {ssid}...\n".encode('utf-8'))
+    
+    if password:
+        cmd = ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid, 
+               'password', password]
+    else:
+        cmd = ['sudo', 'nmcli', 'device', 'wifi', 'connect', ssid]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    
+    if result.returncode == 0:
+        return result.stdout.strip()
+    
+    # If direct connect failed, create a saved connection profile
+    # This will auto-connect when network becomes available
+    sock.send("Network not visible. Creating saved profile...\n".encode('utf-8'))
+    
+    if password:
+        cmd = ['sudo', 'nmcli', 'connection', 'add',
+               'type', 'wifi',
+               'con-name', ssid,
+               'ssid', ssid,
+               'wifi-sec.key-mgmt', 'wpa-psk',
+               'wifi-sec.psk', password,
+               'connection.autoconnect', 'yes']
+    else:
+        cmd = ['sudo', 'nmcli', 'connection', 'add',
+               'type', 'wifi',
+               'con-name', ssid,
+               'ssid', ssid,
+               'connection.autoconnect', 'yes']
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    
+    if result.returncode != 0:
+        raise Exception(f"nmcli failed: {result.stderr.strip()}")
+    
+    sock.send("WiFi profile saved. Will connect when network is in range.\n".encode('utf-8'))
+    return result.stdout.strip()
+
+def configure_wifi_wpa_supplicant(sock, ssid, password):
+    """Configure WiFi using wpa_supplicant (legacy method)"""
     import subprocess
     import os
     
-    try:
-        # Method 1: Using wpa_passphrase (recommended for WPA/WPA2)
-        if password:
-            sock.send("Generating WPA configuration...\n".encode('utf-8'))
-            
-            # Generate WPA config
-            result = subprocess.run(
-                ['wpa_passphrase', ssid, password],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode != 0:
-                raise Exception(f"wpa_passphrase failed: {result.stderr}")
-            
-            wpa_config = result.stdout
-            
-            # Backup existing config
-            sock.send("Backing up current configuration...\n".encode('utf-8'))
-            subprocess.run(['sudo', 'cp', '/etc/wpa_supplicant/wpa_supplicant.conf', 
-                          '/etc/wpa_supplicant/wpa_supplicant.conf.backup'], 
-                         timeout=5)
-            
-            # Append new network to wpa_supplicant.conf
-            sock.send("Writing WiFi configuration...\n".encode('utf-8'))
-            config_lines = [
-                '\n# Added by Bluetooth WiFi Setup\n',
-                wpa_config,
-                '\n'
-            ]
-            
-            with open('/tmp/wifi_network.conf', 'w') as f:
-                f.write(''.join(config_lines))
-            
-            # Append to wpa_supplicant config
-            subprocess.run(
-                ['sudo', 'bash', '-c', 
-                 'cat /tmp/wifi_network.conf >> /etc/wpa_supplicant/wpa_supplicant.conf'],
-                timeout=5,
-                check=True
-            )
-            
-            # Remove temp file
-            os.remove('/tmp/wifi_network.conf')
-            
-        else:
-            # Open network (no password)
-            sock.send("Configuring open network...\n".encode('utf-8'))
-            open_network = f'''
+    wpa_conf = '/etc/wpa_supplicant/wpa_supplicant.conf'
+    
+    # Check if wpa_supplicant.conf exists, create if not
+    if not os.path.exists(wpa_conf):
+        sock.send("Creating wpa_supplicant.conf...\n".encode('utf-8'))
+        base_config = '''ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=US
+'''
+        with open('/tmp/wpa_base.conf', 'w') as f:
+            f.write(base_config)
+        subprocess.run(['sudo', 'cp', '/tmp/wpa_base.conf', wpa_conf],
+                      timeout=5, check=True)
+        os.remove('/tmp/wpa_base.conf')
+    
+    if password:
+        sock.send("Generating WPA configuration...\n".encode('utf-8'))
+        
+        # Generate WPA config
+        result = subprocess.run(
+            ['wpa_passphrase', ssid, password],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode != 0:
+            raise Exception(f"wpa_passphrase failed: {result.stderr}")
+        
+        wpa_config = result.stdout
+        
+        # Backup existing config
+        sock.send("Backing up current configuration...\n".encode('utf-8'))
+        subprocess.run(['sudo', 'cp', wpa_conf, f'{wpa_conf}.backup'], timeout=5)
+        
+        # Append new network to wpa_supplicant.conf
+        sock.send("Writing WiFi configuration...\n".encode('utf-8'))
+        config_lines = [
+            '\n# Added by Bluetooth WiFi Setup\n',
+            wpa_config,
+            '\n'
+        ]
+        
+        with open('/tmp/wifi_network.conf', 'w') as f:
+            f.write(''.join(config_lines))
+        
+        subprocess.run(
+            ['sudo', 'bash', '-c', f'cat /tmp/wifi_network.conf >> {wpa_conf}'],
+            timeout=5,
+            check=True
+        )
+        
+        os.remove('/tmp/wifi_network.conf')
+        
+    else:
+        # Open network (no password)
+        sock.send("Configuring open network...\n".encode('utf-8'))
+        open_network = f'''
 network={{
     ssid="{ssid}"
     key_mgmt=NONE
 }}
 '''
-            with open('/tmp/wifi_network.conf', 'w') as f:
-                f.write(open_network)
-            
-            subprocess.run(
-                ['sudo', 'bash', '-c', 
-                 'cat /tmp/wifi_network.conf >> /etc/wpa_supplicant/wpa_supplicant.conf'],
-                timeout=5,
-                check=True
-            )
-            os.remove('/tmp/wifi_network.conf')
+        with open('/tmp/wifi_network.conf', 'w') as f:
+            f.write(open_network)
         
-        # Reconfigure wpa_supplicant
-        sock.send("Restarting WiFi interface...\n".encode('utf-8'))
-        subprocess.run(['sudo', 'wpa_cli', '-i', 'wlan0', 'reconfigure'], 
-                      timeout=5, 
-                      check=True)
+        subprocess.run(
+            ['sudo', 'bash', '-c', f'cat /tmp/wifi_network.conf >> {wpa_conf}'],
+            timeout=5,
+            check=True
+        )
+        os.remove('/tmp/wifi_network.conf')
+    
+    # Reconfigure wpa_supplicant
+    sock.send("Restarting WiFi interface...\n".encode('utf-8'))
+    subprocess.run(['sudo', 'wpa_cli', '-i', 'wlan0', 'reconfigure'], 
+                  timeout=5, check=True)
+
+def configure_wifi(sock, ssid, password):
+    """Configure WiFi on Raspberry Pi"""
+    import subprocess
+    
+    try:
+        # Check which WiFi management system is in use
+        if uses_networkmanager():
+            print("[WIFI] Using NetworkManager")
+            configure_wifi_networkmanager(sock, ssid, password)
+        else:
+            print("[WIFI] Using wpa_supplicant")
+            configure_wifi_wpa_supplicant(sock, ssid, password)
         
         # Wait a moment for connection
-        time.sleep(2)
+        time.sleep(3)
         
         # Check if connected
         result = subprocess.run(['iwgetid', '-r'], 
