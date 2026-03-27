@@ -281,7 +281,10 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(localizations.translate('appTitle'))),
+      appBar: AppBar(
+        toolbarHeight: 0,
+        elevation: 0,
+      ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -696,6 +699,7 @@ class TextBoxPage extends StatefulWidget {
 class _TextBoxPageState extends State<TextBoxPage> {
   final TextEditingController _favoriteFoodsController = TextEditingController();
   final SettingsManager _settings = SettingsManager();
+  Timer? _debounceTimer;
   
   // Track allergy/intolerance selections using localization keys
   final Map<String, bool> _allergies = {
@@ -731,7 +735,14 @@ class _TextBoxPageState extends State<TextBoxPage> {
   }
 
   void _saveFavoriteFoods(String value) {
-    _settings.favoriteFoods = value;
+    // Cancel any existing timer
+    _debounceTimer?.cancel();
+    
+    // Start a new timer - only save after 500ms of no typing
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _settings.favoriteFoods = value;
+      debugPrint('✅ Saved favorite foods');
+    });
   }
 
   void _saveAllergy(String key, bool value) {
@@ -740,6 +751,7 @@ class _TextBoxPageState extends State<TextBoxPage> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _favoriteFoodsController.dispose();
     super.dispose();
   }
@@ -814,6 +826,7 @@ class _EmptyPageState extends State<EmptyPage> {
   final SettingsManager _settings = SettingsManager();
   late String _selectedLanguage;
   late double _ttsSpeed;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -833,7 +846,20 @@ class _EmptyPageState extends State<EmptyPage> {
   }
 
   void _saveTTSSpeed(double speed) {
-    _settings.ttsSpeed = speed;
+    // Cancel any existing timer
+    _debounceTimer?.cancel();
+    
+    // Start a new timer - only save after 300ms of no changes
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _settings.ttsSpeed = speed;
+      debugPrint('✅ Saved TTS speed: $speed');
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -881,8 +907,8 @@ class _EmptyPageState extends State<EmptyPage> {
                   value: _ttsSpeed,
                   min: 1.0,
                   max: 200.0,
-                  divisions: 199,
-                  label: '${_ttsSpeed.toInt()}%',
+                  divisions: 99,
+                  label: '${_ttsSpeed.round()}%',
                   onChanged: (double value) {
                     setState(() {
                       _ttsSpeed = value;
@@ -894,7 +920,7 @@ class _EmptyPageState extends State<EmptyPage> {
               SizedBox(
                 width: 60,
                 child: Text(
-                  '${_ttsSpeed.toInt()}%',
+                  '${_ttsSpeed.round()}%',
                   style: const TextStyle(fontSize: 16),
                   textAlign: TextAlign.center,
                 ),
