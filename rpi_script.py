@@ -1,35 +1,55 @@
 #!/usr/bin/env python3
 
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*neon capable.*")
+
 import os
 import time
 import base64
 import asyncio
+import socket
 from datetime import datetime
 
 import RPi.GPIO as GPIO
 import google.genai as genai
 from picamera2 import Picamera2
+from libcamera import Transform, controls
 
 # -----------------------------
 # CAMERA SETUP
 # -----------------------------
 picam2 = Picamera2()
-config = picam2.create_still_configuration(main={"size": (1920, 1080)})
+config = picam2.create_still_configuration(
+    main={"size": (1920, 1080)},
+    transform=Transform(vflip=True,hflip=True)
+)
 picam2.configure(config)
 picam2.start()
 time.sleep(2)
+
+# Enable continuous autofocus for Pi Camera 3
+try:
+    picam2.set_controls({
+        "AfMode": controls.AfModeEnum.Continuous
+    })
+   
+    time.sleep(1.0)
+    print("Autofocus enabled (continuous mode).")
+except Exception as e:
+    print(f"Autofocus not available or failed to enable: {e}")
 
 # -----------------------------
 # PINS
 # -----------------------------
 TRIG1, ECHO1 = 27, 22
 TRIG2, ECHO2 = 17, 18
-TRIG3, ECHO3 = 5, 6   # ⚠️ may be unstable
+TRIG3, ECHO3 = 5, 6
 TRIG4, ECHO4 = 21, 20
 
 MOTOR1 = 4
-MOTOR2 = 3
-MOTOR3 = 2
+MOTOR2 = 13
+MOTOR3 = 26
+MOTOR4 = 19
 
 BTN_LEFT = 12
 BTN_MIDDLE = 0
@@ -59,7 +79,7 @@ for trig in [TRIG1, TRIG2, TRIG3, TRIG4]:
 for echo in [ECHO1, ECHO2, ECHO3, ECHO4]:
     GPIO.setup(echo, GPIO.IN)
 
-for m in [MOTOR1, MOTOR2, MOTOR3]:
+for m in [MOTOR1, MOTOR2, MOTOR3, MOTOR4]:
     GPIO.setup(m, GPIO.OUT)
     GPIO.output(m, GPIO.LOW)
 
@@ -71,48 +91,35 @@ GPIO.setup(BTN_RIGHT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # FUNCTIONS
 # -----------------------------
 async def speak_text(text):
-    """
-    Convert text to audio using Edge TTS and play it.
-    Auto-detects Bulgarian or English based on Cyrillic characters.
-    """
     try:
         import edge_tts
+        os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
         import pygame
         
-        # Detect language
         cyrillic_count = sum(1 for char in text if '\u0400' <= char <= '\u04FF')
         if len(text) > 0 and cyrillic_count / len(text) > 0.2:
-            voice = "bg-BG-BorislavNeural"  # Bulgarian
+            voice = "bg-BG-BorislavNeural"
         else:
-            voice = "en-US-AriaNeural"  # English
+            voice = "en-US-AriaNeural"
         
-        # Create temporary audio file
         audio_file = "/tmp/tts_audio.mp3"
         
-        # Generate speech
         communicate = edge_tts.Communicate(text, voice=voice)
         await communicate.save(audio_file)
         
-        # Play audio
         pygame.mixer.init()
         pygame.mixer.music.load(audio_file)
         pygame.mixer.music.play()
         
-        # Wait for playback to finish
         while pygame.mixer.music.get_busy():
             await asyncio.sleep(0.1)
         
-        # Cleanup
         pygame.mixer.music.unload()
         pygame.mixer.quit()
         
-        # Delete temp file
         if os.path.exists(audio_file):
             os.remove(audio_file)
             
-    except ImportError as e:
-        print(f"TTS Error: Missing module - {e}")
-        print("Install with: pip install edge-tts pygame")
     except Exception as e:
         print(f"TTS Error: {e}")
 
@@ -140,6 +147,14 @@ def get_distance(trig, echo):
     return (end - start) * SPEED / 2
 
 
+def has_internet(host="generativelanguage.googleapis.com", port=443, timeout=2.0):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def capture_and_send(prompt):
     path = f"/tmp/img_{datetime.now().strftime('%H%M%S')}.jpg"
     picam2.capture_file(path)
@@ -147,20 +162,18 @@ def capture_and_send(prompt):
     with open(path, "rb") as f:
         img = base64.b64encode(f.read()).decode()
 
-    # List of models to try (in order of preference)
     models = [
         "models/gemini-flash-lite-latest",
-        "models/gemini-1.5-flash-latest",
-        "models/gemini-1.5-flash"
     ]
-    
-    max_retries = 3
-    base_delay = 2  # seconds
-    
+
+    if not has_internet():
+        print("Network unavailable: cannot reach Gemini API")
+        asyncio.run(speak_text("No internet connection. Please try again."))
+        return
+
     for model in models:
-        for attempt in range(max_retries):
+        for attempt in range(2):
             try:
-                print(f"Trying {model} (attempt {attempt + 1}/{max_retries})...")
                 response = client.models.generate_content(
                     model=model,
                     contents=[
@@ -175,34 +188,18 @@ def capture_and_send(prompt):
                 )
 
                 print("\nAI:", response.text)
-                
-                # Speak the response using TTS
                 asyncio.run(speak_text(response.text))
-                return  # Success, exit function
-                
+                return
+
             except Exception as e:
-                error_msg = str(e)
-                
-                # Check if it's a 503 error
-                if "503" in error_msg or "UNAVAILABLE" in error_msg:
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"Model unavailable. Retrying in {delay}s...")
-                        time.sleep(delay)
-                    else:
-                        print(f"{model} unavailable after {max_retries} attempts. Trying next model...")
-                        break  # Try next model
-                else:
-                    # For other errors, print and try next model
-                    print(f"Error with {model}: {error_msg}")
-                    break
-    
-    # If all models fail
-    print("ERROR: All models failed. Please try again later.")
-    asyncio.run(speak_text("Sorry, the AI service is currently unavailable. Please try again later."))
+                print(f"Error with {model} (try {attempt + 1}/2): {e}")
+                if attempt == 0:
+                    time.sleep(1.0)
+
+    asyncio.run(speak_text("AI service unavailable."))
 
 
-# -------- VIBRATION FUNCTIONS --------
+# -------- VIBRATION --------
 def vibrate_once(pin):
     GPIO.output(pin, GPIO.HIGH)
     time.sleep(0.15)
@@ -221,87 +218,114 @@ def vibrate_continuous(pin, duration=1.0):
     GPIO.output(pin, GPIO.LOW)
 
 def handle_vibration(distance, motor_pin):
+    
+    if distance == -1:
+        GPIO.output(motor_pin, GPIO.LOW)
+        return
+
+    if distance <= 0:
+        GPIO.output(motor_pin, GPIO.LOW)
+        return
+    
     if distance > 0 and distance < 20:
         vibrate_continuous(motor_pin)
-
     elif distance < 50:
         vibrate_twice(motor_pin)
-
     elif distance < 100:
         vibrate_once(motor_pin)
-
     else:
         GPIO.output(motor_pin, GPIO.LOW)
 
 # -----------------------------
 # MAIN
 # -----------------------------
-print("System ready (FULL MODE + PATTERNS)")
+print("System ready")
 
 sensors_on = False
 last_time = time.time()
 
+DEBOUNCE_SEC = 0.35
+last_left_press = 0.0
+last_middle_press = 0.0
+last_right_press = 0.0
+
+prev_left = GPIO.input(BTN_LEFT)
+prev_middle = GPIO.input(BTN_MIDDLE)
+prev_right = GPIO.input(BTN_RIGHT)
+
 try:
     while True:
+        now = time.time()
+        left_state = GPIO.input(BTN_LEFT)
+        middle_state = GPIO.input(BTN_MIDDLE)
+        right_state = GPIO.input(BTN_RIGHT)
 
-        # -------- BUTTON LEFT (TEXT) --------
-        if GPIO.input(BTN_LEFT) == GPIO.LOW:
-            print("\nReading text...")
-            capture_and_send("Read all text in this image.")
-            time.sleep(0.3)
-            while GPIO.input(BTN_LEFT) == GPIO.LOW:
-                time.sleep(0.05)
+        # -------- TEXT MODE --------
+        if left_state == GPIO.LOW and prev_left == GPIO.HIGH and now - last_left_press >= DEBOUNCE_SEC:
+            last_left_press = now
+            capture_and_send(
+                "Answer ONLY in Bulgarian. "
+                "Read only clearly visible text. "
+                "Focus on Bulgarian and English text. "
+                "Ignore blurry, cut, or unreadable text. "
+                "Do not describe objects unless necessary."
+            )
 
-        # -------- BUTTON MIDDLE (DESCRIPTION) --------
-        if GPIO.input(BTN_MIDDLE) == GPIO.LOW:
-            print("\nDescribing scene...")
-            capture_and_send("Describe the scene (left, center, right).")
-            time.sleep(0.3)
-            while GPIO.input(BTN_MIDDLE) == GPIO.LOW:
-                time.sleep(0.05)
+        # -------- SCENE MODE --------
+        if middle_state == GPIO.LOW and prev_middle == GPIO.HIGH and now - last_middle_press >= DEBOUNCE_SEC:
+            last_middle_press = now
+            capture_and_send(
+                "Answer ONLY in Bulgarian. "
+                "1-2 sentence description of the scene. "
+                "Say only important and useful things. "
+                "Ignore small or unclear details."
+            )
 
-        # -------- BUTTON RIGHT (TOGGLE SENSORS) --------
-        if GPIO.input(BTN_RIGHT) == GPIO.LOW:
+        # -------- TOGGLE --------
+        if right_state == GPIO.LOW and prev_right == GPIO.HIGH and now - last_right_press >= DEBOUNCE_SEC:
+            last_right_press = now
             sensors_on = not sensors_on
-            print("Sensors:", "ON" if sensors_on else "OFF")
-            time.sleep(0.3)
-            while GPIO.input(BTN_RIGHT) == GPIO.LOW:
-                time.sleep(0.05)
+            print("Sensors:", sensors_on)
 
-        # -------- SENSOR LOGIC --------
+        # -------- SENSORS --------
         if sensors_on and time.time() - last_time > 1:
 
             d1 = get_distance(TRIG1, ECHO1)
-            time.sleep(0.25)
-
+            time.sleep(0.2)
             d2 = get_distance(TRIG2, ECHO2)
-            time.sleep(0.25)
-
+            time.sleep(0.2)
             d3 = get_distance(TRIG3, ECHO3)
-            time.sleep(0.25)
-
+            time.sleep(0.2)
             d4 = get_distance(TRIG4, ECHO4)
+            time.sleep(0.2)
+            
+            print(
+                f"\rS1:{d1:.1f} S2:{d2:.1f} S3:{d3:.1f} S4:{d4:.1f} ", 
+                end=""
+            )
 
-            print(f"S1: {d1:.1f} | S2: {d2:.1f} | S3: {d3:.1f} | S4: {d4:.1f}")
-
-            # -------- VIBRATION CONTROL --------
             handle_vibration(d1, MOTOR1)
             handle_vibration(d2, MOTOR2)
             handle_vibration(d3, MOTOR3)
+            handle_vibration(d4, MOTOR4)
 
             last_time = time.time()
 
-        # Safety
+        prev_left = left_state
+        prev_middle = middle_state
+        prev_right = right_state
+
         if not sensors_on:
             GPIO.output(MOTOR1, GPIO.LOW)
             GPIO.output(MOTOR2, GPIO.LOW)
             GPIO.output(MOTOR3, GPIO.LOW)
+            GPIO.output(MOTOR4, GPIO.LOW)
 
         time.sleep(0.02)
 
 except KeyboardInterrupt:
-    print("Exiting...")
+    pass
 
 finally:
     GPIO.cleanup()
-picam2.stop()
+    picam2.stop()
