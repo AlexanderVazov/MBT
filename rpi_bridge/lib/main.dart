@@ -390,6 +390,68 @@ class ApiService {
     );
     await _handleResponse(response);
   }
+
+  // Food endpoints - Preferred Foods
+  Future<List<dynamic>> getPreferredFoods() async {
+    debugPrint('📤 Getting preferred foods');
+    final response = await http.get(
+      Uri.parse('$baseUrl/food/preferred'),
+      headers: _authHeaders,
+    );
+    final result = await _handleResponse(response);
+    if (result is List) return result;
+    return result['data'] ?? result['foods'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> addPreferredFood({required String name}) async {
+    debugPrint('📤 Adding preferred food: $name');
+    final response = await http.post(
+      Uri.parse('$baseUrl/food/preferred'),
+      headers: _authHeaders,
+      body: jsonEncode({'name': name}),
+    );
+    return _handleResponse(response);
+  }
+
+  Future<void> deletePreferredFood({required String id}) async {
+    debugPrint('📤 Deleting preferred food: $id');
+    final response = await http.delete(
+      Uri.parse('$baseUrl/food/preferred/$id'),
+      headers: _authHeaders,
+    );
+    await _handleResponse(response);
+  }
+
+  // Food endpoints - Allergies
+  Future<List<dynamic>> getAllergies() async {
+    debugPrint('📤 Getting allergies');
+    final response = await http.get(
+      Uri.parse('$baseUrl/food/allergies'),
+      headers: _authHeaders,
+    );
+    final result = await _handleResponse(response);
+    if (result is List) return result;
+    return result['data'] ?? result['allergies'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> addAllergy({required String name}) async {
+    debugPrint('📤 Adding allergy: $name');
+    final response = await http.post(
+      Uri.parse('$baseUrl/food/allergies'),
+      headers: _authHeaders,
+      body: jsonEncode({'name': name}),
+    );
+    return _handleResponse(response);
+  }
+
+  Future<void> deleteAllergy({required String id}) async {
+    debugPrint('📤 Deleting allergy: $id');
+    final response = await http.delete(
+      Uri.parse('$baseUrl/food/allergies/$id'),
+      headers: _authHeaders,
+    );
+    await _handleResponse(response);
+  }
 }
 
 class ApiException implements Exception {
