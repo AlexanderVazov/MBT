@@ -6,16 +6,98 @@ This server listens for incoming Bluetooth connections and handles data exchange
 
 import bluetooth
 import sys
+import os
 import signal
 import time
 import subprocess
+import json
+import threading
+
+try:
+    import ocr_scanner
+    OCR_AVAILABLE = True
+    print("[INFO] OCR scanner module loaded")
+except ImportError:
+    OCR_AVAILABLE = False
+    print("[INFO] ocr_scanner not available — install pytesseract + pillow on the Pi")
 
 server_sock = None
 client_sock = None
+rpi_process = None
+
+# Absolute path to rpi.py (one directory above this script)
+RPI_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rpi.py')
+
+# Food preferences received from the mobile app (also persisted to preferences.json)
+current_prefs = {"preferred": [], "allergies": []}
+
+def _rpi_stdout_reader(process, sock):
+    """
+    Background thread: read rpi.py stdout line by line.
+    Lines prefixed with 'BT:' are stripped of the prefix and forwarded to the
+    connected Bluetooth socket so the mobile app receives them.
+    All other lines are printed as [RPI] log output.
+    """
+    try:
+        for raw in iter(process.stdout.readline, b''):
+            line = raw.decode('utf-8', errors='replace').rstrip('\r\n')
+            if line.startswith('BT:'):
+                payload = line[3:]          # strip 'BT:' prefix
+                try:
+                    sock.send((payload + '\n').encode('utf-8'))
+                    print(f"[RPI→APP] {payload[:120]}")
+                except Exception as e:
+                    print(f"[WARNING] Could not forward to app: {e}")
+            else:
+                if line:
+                    print(f"[RPI] {line}")
+    except Exception as e:
+        print(f"[INFO] rpi.py stdout reader stopped: {e}")
+
+
+def start_rpi_script(sock):
+    """Launch rpi.py as a background subprocess and wire its stdout to the BT socket."""
+    global rpi_process
+    if rpi_process is not None and rpi_process.poll() is None:
+        print("[INFO] rpi.py is already running")
+        return
+    try:
+        rpi_process = subprocess.Popen(
+            [sys.executable, RPI_SCRIPT],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        print(f"[INFO] Started rpi.py (pid {rpi_process.pid})")
+        t = threading.Thread(
+            target=_rpi_stdout_reader,
+            args=(rpi_process, sock),
+            daemon=True,
+        )
+        t.start()
+    except Exception as e:
+        print(f"[ERROR] Failed to start rpi.py: {e}")
+        rpi_process = None
+
+
+def stop_rpi_script():
+    """Terminate the rpi.py subprocess if it is running."""
+    global rpi_process
+    if rpi_process is None:
+        return
+    if rpi_process.poll() is None:
+        rpi_process.terminate()
+        try:
+            rpi_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            rpi_process.kill()
+        print("[INFO] rpi.py stopped")
+    rpi_process = None
+
 
 def cleanup(signum=None, frame=None):
     """Clean up Bluetooth sockets on exit"""
     print("\n[INFO] Shutting down Bluetooth server...")
+    stop_rpi_script()
     if client_sock:
         try:
             client_sock.close()
@@ -79,6 +161,13 @@ def get_bluetooth_address():
 def start_server():
     global server_sock, client_sock
     
+    # Load persisted food preferences from previous session
+    global current_prefs
+    if OCR_AVAILABLE:
+        current_prefs = ocr_scanner.load_preferences()
+        print(f"[INFO] Loaded preferences: {len(current_prefs.get('preferred', []))} preferred foods, "
+              f"{len(current_prefs.get('allergies', []))} allergies")
+
     # Setup Bluetooth adapter first
     setup_bluetooth()
     
@@ -163,6 +252,7 @@ def start_server():
             print(f"\n[SUCCESS] Accepted connection from {client_info}")
             
             try:
+                start_rpi_script(client_sock)
                 # Handle the connected client
                 handle_client(client_sock)
             except bluetooth.BluetoothError as e:
@@ -170,6 +260,7 @@ def start_server():
             except Exception as e:
                 print(f"[ERROR] Client handler error: {e}")
             finally:
+                stop_rpi_script()
                 if client_sock:
                     client_sock.close()
                     client_sock = None
@@ -199,13 +290,16 @@ def handle_client(sock):
                 message = data.decode('utf-8').strip()
                 print(f"[RECEIVED] {message}")
                 
-                # Check if this is WiFi configuration data
+                # Route messages
                 if message.startswith('WIFI:'):
                     handle_wifi_config(sock, message)
                 elif message == 'GET_IP':
                     handle_get_ip(sock)
+                elif message.startswith('PREFS:'):
+                    handle_prefs(message[6:])   # strip 'PREFS:' prefix
+                elif message == 'SCAN':
+                    handle_scan(sock)
                 else:
-                    # Echo back a response for other messages
                     response = f"Pi received: {message}\n"
                     sock.send(response.encode('utf-8'))
                     print(f"[SENT] {response.strip()}")
@@ -247,6 +341,40 @@ def handle_get_ip(sock):
         error_msg = f"ERROR: Failed to get IP: {e}\n"
         sock.send(error_msg.encode('utf-8'))
         print(f"[ERROR] {error_msg.strip()}")
+
+def handle_prefs(json_str):
+    """Store food preferences received from the mobile app."""
+    global current_prefs
+    try:
+        prefs = json.loads(json_str)
+        if not isinstance(prefs, dict):
+            raise ValueError("Expected a JSON object")
+        current_prefs = prefs
+        if OCR_AVAILABLE:
+            ocr_scanner.save_preferences(prefs)
+        n_pref = len(prefs.get('preferred', []))
+        n_alrg = len(prefs.get('allergies', []))
+        print(f"[PREFS] Updated — {n_pref} preferred food(s), {n_alrg} allerg(y/ies)")
+    except Exception as e:
+        print(f"[PREFS] Failed to parse preferences: {e}")
+
+
+def handle_scan(sock):
+    """Capture image, run OCR, filter against current preferences, send result."""
+    if not OCR_AVAILABLE:
+        sock.send(b"SCAN_RESULT:{\"safe\":null,\"allergens_found\":[],\"preferred_found\":[],\"summary\":\"OCR not installed on Pi.\",\"raw_text\":\"\"}\n")
+        print("[SCAN] OCR not available — sent error result")
+        return
+
+    # Tell the app scanning has started so it can show a spinner
+    sock.send(b"SCANNING\n")
+    print("[SCAN] Starting capture + OCR...")
+
+    result = ocr_scanner.scan_and_filter(current_prefs)
+    result_json = json.dumps(result, ensure_ascii=False)
+    sock.send(f"SCAN_RESULT:{result_json}\n".encode('utf-8'))
+    print(f"[SCAN] Done — {result['summary']}")
+
 
 def handle_wifi_config(sock, message):
     """Handle WiFi configuration request"""

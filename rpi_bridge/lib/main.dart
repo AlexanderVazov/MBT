@@ -476,7 +476,7 @@ class AppLocalizations {
 
   static final Map<String, Map<String, String>> _localizedValues = {
     'en': {
-      'appTitle': 'RPI Bridge',
+      'appTitle': 'MyBaT',
       'connect': 'Connection',
       'foodPreferences': 'Food Preferences',
       'settings': 'Settings',
@@ -518,7 +518,7 @@ class AppLocalizations {
       'internetStatusUnknown': 'Pi internet status unknown',
       'piConnectedToInternet': 'Pi is connected to internet',
       'piNotConnectedToInternet': 'Pi is not connected to internet',
-      'welcome': 'Welcome to RPI Bridge',
+      'welcome': 'Welcome to MyBaT',
       'loginTitle': 'Login',
       'registerTitle': 'Register as Relative',
       'username': 'Username',
@@ -569,9 +569,27 @@ class AppLocalizations {
       'linkedRelatives': 'Linked Relatives',
       'noRelativesYet': 'No relatives linked yet. Accept an invitation to get started.',
       'loginToAcceptInvite': 'Please log in to accept the invitation',
+      'scanFoodLabel': 'Scan Food Label',
+      'scanResult': 'Scan Result',
+      'safe': 'SAFE',
+      'unsafe': 'UNSAFE',
+      'allergenDetected': 'Allergens detected',
+      'preferredItemFound': 'Contains preferred items',
+      'scanFailed': 'Scan failed',
+      'detectedText': 'Detected text',
+      'typeFoodName': 'Type a food name and press Add...',
+      'typeAllergyName': 'Type an allergy and press Add...',
+      'add': 'Add',
+      'noFoodsAdded': 'No preferred foods added yet.',
+      'noAllergiesAdded': 'No allergies added yet.',
+      'errorLoading': 'Error loading data. Tap to retry.',
+      'sosSending': 'Sending SOS alert...',
+      'sosSent': 'SOS alert sent! Your location has been shared with your relatives.',
+      'sosFailed': 'Failed to send SOS',
+      'sosLocationPermissionDenied': 'Location permission is required to send SOS.',
     },
     'bg': {
-      'appTitle': 'RPI Мост',
+      'appTitle': 'MyBaT',
       'connect': 'Връзка',
       'foodPreferences': 'Хранителни Предпочитания',
       'settings': 'Настройки',
@@ -613,7 +631,7 @@ class AppLocalizations {
       'internetStatusUnknown': 'Интернет статусът на Pi е неизвестен',
       'piConnectedToInternet': 'Pi е свързано с интернет',
       'piNotConnectedToInternet': 'Pi не е свързано с интернет',
-      'welcome': 'Добре дошли в RPI Bridge',
+      'welcome': 'Добре дошли в MyBaT',
       'loginTitle': 'Вход',
       'registerTitle': 'Регистрация като Роднина',
       'username': 'Потребителско име',
@@ -664,6 +682,24 @@ class AppLocalizations {
       'linkedRelatives': 'Свързани Близки',
       'noRelativesYet': 'Все още няма свързани близки. Приемете покана, за да започнете.',
       'loginToAcceptInvite': 'Моля, влезте в профила си, за да приемете поканата',
+      'scanFoodLabel': 'Сканирай Етикет',
+      'scanResult': 'Резултат от Сканиране',
+      'safe': 'БЕЗОПАСНО',
+      'unsafe': 'ОПАСНО',
+      'allergenDetected': 'Открити алергени',
+      'preferredItemFound': 'Съдържа предпочитани храни',
+      'scanFailed': 'Грешка при сканиране',
+      'detectedText': 'Разпознат текст',
+      'typeFoodName': 'Въведете храна и натиснете Добави...',
+      'typeAllergyName': 'Въведете алергия и натиснете Добави...',
+      'add': 'Добави',
+      'noFoodsAdded': 'Все още няма добавени любими храни.',
+      'noAllergiesAdded': 'Все още няма добавени алергии.',
+      'errorLoading': 'Грешка при зареждане. Натиснете за повторен опит.',
+      'sosSending': 'Изпращане на SOS сигнал...',
+      'sosSent': 'SOS сигналът е изпратен! Вашето местоположение беше споделено с близките ви.',
+      'sosFailed': 'Неуспешно изпращане на SOS',
+      'sosLocationPermissionDenied': 'Необходимо е разрешение за местоположение за изпращане на SOS.',
     },
   };
 
@@ -791,7 +827,7 @@ class _MyAppState extends State<MyApp> {
     
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'RPI Bridge',
+      title: 'MyBaT',
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
       locale: _locale,
       supportedLocales: const [
@@ -832,7 +868,6 @@ class _MainScreenState extends State<MainScreen> {
     if (isRelative) {
       return [
         const BluetoothConnectionPage(),
-        const TextBoxPage(),
         const ManageUsersPage(),
         const EmptyPage(),
       ];
@@ -851,13 +886,16 @@ class _MainScreenState extends State<MainScreen> {
     final localizations = AppLocalizations.of(context);
     final isRelative = SettingsManager().isRelative;
     final pages = _getPages();
-    
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 0,
         elevation: 0,
       ),
-      body: pages[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
@@ -865,7 +903,6 @@ class _MainScreenState extends State<MainScreen> {
         items: isRelative
           ? [
               BottomNavigationBarItem(icon: const Icon(Icons.wifi), label: localizations.translate('connect')),
-              BottomNavigationBarItem(icon: const Icon(Icons.local_dining), label: localizations.translate('foodPreferences')),
               BottomNavigationBarItem(icon: const Icon(Icons.people), label: localizations.translate('manageUsers')),
               BottomNavigationBarItem(icon: const Icon(Icons.settings), label: localizations.translate('settings')),
             ]
@@ -891,6 +928,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   bool _isScanning = false;
   bool _isConnecting = false;
   BluetoothConnection? _connection;
+  Stream<Uint8List>? _broadcastInputStream;
   BluetoothDevice? _connectedDevice;
   String? _lastError;
   bool? _piHasInternet;
@@ -898,6 +936,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   Timer? _internetCheckTimer;
   String? _piIpAddress;
   StreamSubscription? _bluetoothSubscription;
+
 
   String _compactError(Object error) {
     final raw = error.toString();
@@ -960,6 +999,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
       try {
         final connection = await _connectSocket(deviceAddress);
         if (mounted) {
+          _broadcastInputStream = connection.input?.asBroadcastStream();
           setState(() {
             _connection = connection;
             _connectedDevice = BluetoothDevice(
@@ -1109,6 +1149,7 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
       }
 
       if (mounted) {
+        _broadcastInputStream = connection.input?.asBroadcastStream();
         setState(() {
           _connection = connection;
           _connectedDevice = device;
@@ -1122,7 +1163,8 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
         // Request IP address from Pi and listen for response
         _listenForPiMessages();
         _requestPiIpAddress();
-        
+        _sendPreferencesToPi();
+
         // Stay on the Bluetooth page - user can tap WiFi Setup button to open WiFi page
       }
     } catch (e) {
@@ -1160,28 +1202,46 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   }
 
   void _listenForPiMessages() {
-    _connection?.input?.listen((data) {
-      final message = String.fromCharCodes(data).trim();
-      debugPrint('Received from Pi: $message');
-      
-      // Check if this is an IP address response
-      if (message.startsWith('IP:')) {
-        final ip = message.substring(3);
-        if (ip != 'unknown' && ip.isNotEmpty) {
-          setState(() {
-            _piIpAddress = ip;
-          });
-          debugPrint('✅ Got Pi IP address: $ip');
-          // Immediately check internet status with the new IP
-          _checkPiInternetStatus();
+    _bluetoothSubscription?.cancel();
+    _bluetoothSubscription = _broadcastInputStream?.listen(
+      (data) {
+        final message = String.fromCharCodes(data).trim();
+        debugPrint('Received from Pi: $message');
+
+        // Check if this is an IP address response
+        if (message.startsWith('IP:')) {
+          final ip = message.substring(3);
+          if (ip != 'unknown' && ip.isNotEmpty) {
+            setState(() {
+              _piIpAddress = ip;
+            });
+            debugPrint('✅ Got Pi IP address: $ip');
+            _checkPiInternetStatus();
+          }
+          return;
         }
-      }
-    }).onDone(() {
-      debugPrint('Bluetooth connection closed');
-      if (mounted) {
-        _disconnectDevice();
-      }
-    });
+
+        if (message == 'SCANNING') {
+          debugPrint('[BT] Pi is scanning...');
+          return;
+        }
+
+        if (message.startsWith('SCAN_RESULT:')) {
+          final jsonStr = message.substring('SCAN_RESULT:'.length);
+          try {
+            final result = jsonDecode(jsonStr) as Map<String, dynamic>;
+            if (mounted) _showScanResult(result);
+          } catch (e) {
+            debugPrint('[BT] Failed to parse SCAN_RESULT: $e');
+          }
+          return;
+        }
+      },
+      onDone: () {
+        debugPrint('Bluetooth connection closed');
+        if (mounted) _disconnectDevice();
+      },
+    );
   }
 
   Future<void> _requestPiIpAddress() async {
@@ -1196,13 +1256,165 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
     }
   }
 
+  /// Fetch preferences from the backend and push them to the Pi via BT.
+  Future<void> _sendPreferencesToPi() async {
+    if (_connection == null) return;
+    try {
+      final preferred = await ApiService().getPreferredFoods();
+      final allergies = await ApiService().getAllergies();
+      final prefs = {
+        'preferred': preferred
+            .map((f) => (f['name'] ?? '').toString())
+            .where((s) => s.isNotEmpty)
+            .toList(),
+        'allergies': allergies
+            .map((a) => (a['name'] ?? '').toString())
+            .where((s) => s.isNotEmpty)
+            .toList(),
+      };
+      final payload = 'PREFS:${jsonEncode(prefs)}\n';
+      _connection!.output.add(Uint8List.fromList(payload.codeUnits));
+      await _connection!.output.allSent;
+      debugPrint('📤 Sent preferences to Pi — '
+          '${prefs['preferred']!.length} preferred, '
+          '${prefs['allergies']!.length} allergies');
+    } catch (e) {
+      debugPrint('⚠️ Could not send preferences to Pi: $e');
+    }
+  }
+
+  /// Show OCR scan result in a bottom sheet.
+  void _showScanResult(Map<String, dynamic> result) {
+    if (!mounted) return;
+    final loc = AppLocalizations.of(context);
+    final safe = result['safe'] as bool?;
+    final allergens = List<String>.from(result['allergens_found'] ?? []);
+    final preferred = List<String>.from(result['preferred_found'] ?? []);
+    final summary = (result['summary'] as String? ?? '').replaceAll('|', '\n');
+    final rawText = result['raw_text'] as String? ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 24, right: 24, top: 24,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              safe == null
+                  ? Icons.help_outline
+                  : safe
+                      ? Icons.check_circle_rounded
+                      : Icons.warning_amber_rounded,
+              size: 72,
+              color: safe == null
+                  ? Colors.grey
+                  : safe
+                      ? Colors.green
+                      : Colors.red,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              safe == null
+                  ? '—'
+                  : safe
+                      ? loc.translate('safe')
+                      : loc.translate('unsafe'),
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: safe == null
+                    ? Colors.grey
+                    : safe
+                        ? Colors.green
+                        : Colors.red,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(summary,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, height: 1.5)),
+            if (allergens.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.warning_rounded, color: Colors.red),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${loc.translate("allergenDetected")}: ${allergens.join(", ")}',
+                      style: const TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+            if (preferred.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.star_rounded, color: Colors.green),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${loc.translate("preferredItemFound")}: ${preferred.join(", ")}',
+                      style: const TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+            if (rawText.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                '${loc.translate("detectedText")}: $rawText',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openWiFiSetup() {
-    if (_connection != null && _connectedDevice != null) {
+    if (_connection != null && _connectedDevice != null && _broadcastInputStream != null) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => WiFiSetupPage(
             connection: _connection!,
+            inputStream: _broadcastInputStream!,
             device: _connectedDevice!,
           ),
         ),
@@ -1406,8 +1618,9 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
 
 class WiFiSetupPage extends StatefulWidget {
   final BluetoothConnection connection;
+  final Stream<Uint8List> inputStream;
   final BluetoothDevice device;
-  const WiFiSetupPage({Key? key, required this.connection, required this.device}) : super(key: key);
+  const WiFiSetupPage({Key? key, required this.connection, required this.inputStream, required this.device}) : super(key: key);
 
   @override
   State<WiFiSetupPage> createState() => _WiFiSetupPageState();
@@ -1420,6 +1633,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
   String? _statusMessage;
   bool _passwordVisible = false;
   String _response = '';
+  StreamSubscription? _responseSubscription;
 
   @override
   void initState() {
@@ -1428,28 +1642,33 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
   }
 
   void _listenForResponses() {
-    widget.connection.input?.listen((data) {
-      final message = String.fromCharCodes(data).trim();
-      debugPrint('Received from Pi: $message');
-      setState(() {
-        _response += '$message\n';
-        if (message.contains('SUCCESS')) {
-          _statusMessage = '✓ WiFi configured successfully!';
-          _isSending = false;
-        } else if (message.contains('ERROR')) {
-          _statusMessage = '✗ Configuration failed: $message';
-          _isSending = false;
+    _responseSubscription = widget.inputStream.listen(
+      (data) {
+        final message = String.fromCharCodes(data).trim();
+        debugPrint('Received from Pi: $message');
+        if (mounted) {
+          setState(() {
+            _response += '$message\n';
+            if (message.contains('SUCCESS')) {
+              _statusMessage = '✓ WiFi configured successfully!';
+              _isSending = false;
+            } else if (message.contains('ERROR')) {
+              _statusMessage = '✗ Configuration failed: $message';
+              _isSending = false;
+            }
+          });
         }
-      });
-    }).onDone(() {
-      debugPrint('Connection closed');
-      if (mounted) {
-        setState(() {
-          _statusMessage = 'Connection closed';
-          _isSending = false;
-        });
-      }
-    });
+      },
+      onDone: () {
+        debugPrint('Connection closed');
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'Connection closed';
+            _isSending = false;
+          });
+        }
+      },
+    );
   }
 
   Future<void> _sendWiFiCredentials() async {
@@ -1483,6 +1702,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
 
   @override
   void dispose() {
+    _responseSubscription?.cancel();
     _ssidController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -1604,120 +1824,235 @@ class TextBoxPage extends StatefulWidget {
 }
 
 class _TextBoxPageState extends State<TextBoxPage> {
-  final TextEditingController _favoriteFoodsController = TextEditingController();
-  final SettingsManager _settings = SettingsManager();
-  Timer? _debounceTimer;
-  
-  // Track allergy/intolerance selections using localization keys
-  final Map<String, bool> _allergies = {
-    'dairy': false,
-    'eggs': false,
-    'peanuts': false,
-    'treeNuts': false,
-    'soy': false,
-    'wheatGluten': false,
-    'fish': false,
-    'shellfish': false,
-    'sesame': false,
-    'lactose': false,
-  };
+  final _api = ApiService();
+  final _foodController = TextEditingController();
+  final _allergyController = TextEditingController();
+
+  List<Map<String, dynamic>> _foods = [];
+  List<Map<String, dynamic>> _allergies = [];
+
+  bool _loadingFoods = true;
+  bool _loadingAllergies = true;
+  bool _foodsError = false;
+  bool _allergiesError = false;
+
+  bool _addingFood = false;
+  bool _addingAllergy = false;
 
   @override
   void initState() {
     super.initState();
-    _loadPreferences();
-  }
-
-  void _loadPreferences() {
-    // Load favorite foods
-    _favoriteFoodsController.text = _settings.favoriteFoods;
-    
-    // Load allergies
-    for (var key in _allergies.keys) {
-      _allergies[key] = _settings.hasAllergy(key);
-    }
-    
-    setState(() {});
-    debugPrint('📖 Loaded food preferences');
-  }
-
-  void _saveFavoriteFoods(String value) {
-    // Cancel any existing timer
-    _debounceTimer?.cancel();
-    
-    // Start a new timer - only save after 500ms of no typing
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _settings.favoriteFoods = value;
-      debugPrint('✅ Saved favorite foods');
-    });
-  }
-
-  void _saveAllergy(String key, bool value) {
-    _settings.toggleAllergy(key, value);
+    _loadFoods();
+    _loadAllergies();
   }
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _favoriteFoodsController.dispose();
+    _foodController.dispose();
+    _allergyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadFoods() async {
+    setState(() { _loadingFoods = true; _foodsError = false; });
+    try {
+      final data = await _api.getPreferredFoods();
+      if (mounted) setState(() { _foods = List<Map<String, dynamic>>.from(data); _loadingFoods = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loadingFoods = false; _foodsError = true; });
+    }
+  }
+
+  Future<void> _loadAllergies() async {
+    setState(() { _loadingAllergies = true; _allergiesError = false; });
+    try {
+      final data = await _api.getAllergies();
+      if (mounted) setState(() { _allergies = List<Map<String, dynamic>>.from(data); _loadingAllergies = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loadingAllergies = false; _allergiesError = true; });
+    }
+  }
+
+  Future<void> _addFood() async {
+    final name = _foodController.text.trim();
+    if (name.isEmpty || _addingFood) return;
+    setState(() => _addingFood = true);
+    try {
+      final item = await _api.addPreferredFood(name: name);
+      if (mounted) {
+        setState(() { _foods.add(Map<String, dynamic>.from(item['data'] ?? item)); _addingFood = false; });
+        _foodController.clear();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _addingFood = false);
+    }
+  }
+
+  Future<void> _deleteFood(Map<String, dynamic> food) async {
+    final id = (food['id'] ?? food['_id'])?.toString();
+    if (id == null) return;
+    // Optimistic remove
+    setState(() => _foods.removeWhere((f) => (f['id'] ?? f['_id'])?.toString() == id));
+    try {
+      await _api.deletePreferredFood(id: id);
+    } catch (_) {
+      // Restore on failure
+      if (mounted) setState(() => _foods.add(food));
+    }
+  }
+
+  Future<void> _addAllergy() async {
+    final name = _allergyController.text.trim();
+    if (name.isEmpty || _addingAllergy) return;
+    setState(() => _addingAllergy = true);
+    try {
+      final item = await _api.addAllergy(name: name);
+      if (mounted) {
+        setState(() { _allergies.add(Map<String, dynamic>.from(item['data'] ?? item)); _addingAllergy = false; });
+        _allergyController.clear();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _addingAllergy = false);
+    }
+  }
+
+  Future<void> _deleteAllergy(Map<String, dynamic> allergy) async {
+    final id = (allergy['id'] ?? allergy['_id'])?.toString();
+    if (id == null) return;
+    setState(() => _allergies.removeWhere((a) => (a['id'] ?? a['_id'])?.toString() == id));
+    try {
+      await _api.deleteAllergy(id: id);
+    } catch (_) {
+      if (mounted) setState(() => _allergies.add(allergy));
+    }
+  }
+
+  Widget _buildInputRow({
+    required TextEditingController controller,
+    required String hint,
+    required bool loading,
+    required VoidCallback onAdd,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              hintText: hint,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            onSubmitted: (_) => onAdd(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 44,
+          child: ElevatedButton(
+            onPressed: loading ? null : onAdd,
+            child: loading
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Add'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBubbles({
+    required List<Map<String, dynamic>> items,
+    required bool loading,
+    required bool hasError,
+    required VoidCallback onRetry,
+    required Future<void> Function(Map<String, dynamic>) onDelete,
+    required String emptyText,
+    required Color color,
+  }) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (hasError) {
+      return GestureDetector(
+        onTap: onRetry,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text('Error loading data. Tap to retry.', style: TextStyle(color: Colors.red[700])),
+        ),
+      );
+    }
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(emptyText, style: const TextStyle(color: Colors.grey)),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items.map((item) {
+        final name = (item['name'] ?? '').toString();
+        return Chip(
+          label: Text(name),
+          backgroundColor: color.withOpacity(0.15),
+          side: BorderSide(color: color.withOpacity(0.4)),
+          deleteIcon: Icon(Icons.close, size: 16, color: color),
+          onDeleted: () => onDelete(item),
+        );
+      }).toList(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context);
-    
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              localizations.translate('favoriteFoods'),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _favoriteFoodsController,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                hintText: localizations.translate('enterFavoriteFoods'),
-              ),
-              maxLines: 3,
-              onChanged: (value) => _saveFavoriteFoods(value),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              localizations.translate('allergiesIntolerances'),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              localizations.translate('selectAllergies'),
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8.0,
-              runSpacing: 8.0,
-              children: _allergies.keys.map((allergyKey) {
-                return FilterChip(
-                  label: Text(localizations.translate(allergyKey)),
-                  selected: _allergies[allergyKey]!,
-                  onSelected: (bool selected) {
-                    setState(() {
-                      _allergies[allergyKey] = selected;
-                    });
-                    _saveAllergy(allergyKey, selected);
-                  },
-                  selectedColor: Colors.orange.shade300,
-                  checkmarkColor: Colors.white,
-                );
-              }).toList(),
-            ),
-          ],
-        ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Preferred Foods', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          _buildInputRow(
+            controller: _foodController,
+            hint: 'Type a food name and press Add...',
+            loading: _addingFood,
+            onAdd: _addFood,
+          ),
+          const SizedBox(height: 12),
+          _buildBubbles(
+            items: _foods,
+            loading: _loadingFoods,
+            hasError: _foodsError,
+            onRetry: _loadFoods,
+            onDelete: _deleteFood,
+            emptyText: 'No preferred foods added yet.',
+            color: Colors.green,
+          ),
+          const SizedBox(height: 28),
+          const Text('Allergies', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          _buildInputRow(
+            controller: _allergyController,
+            hint: 'Type an allergy and press Add...',
+            loading: _addingAllergy,
+            onAdd: _addAllergy,
+          ),
+          const SizedBox(height: 12),
+          _buildBubbles(
+            items: _allergies,
+            loading: _loadingAllergies,
+            hasError: _allergiesError,
+            onRetry: _loadAllergies,
+            onDelete: _deleteAllergy,
+            emptyText: 'No allergies added yet.',
+            color: Colors.red,
+          ),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
