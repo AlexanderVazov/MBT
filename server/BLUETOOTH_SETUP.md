@@ -24,10 +24,12 @@ sudo systemctl start bluetooth
 sudo bluetoothctl
 # In bluetoothctl:
 # - Type: power on
-# - Type: agent on
+# - Type: agent NoInputNoOutput
 # - Type: default-agent
 # - Type: discoverable on
 # - Type: pairable on
+# - Type: discoverable-timeout 0
+# - Type: pairable-timeout 0
 # - Type: exit
 ```
 

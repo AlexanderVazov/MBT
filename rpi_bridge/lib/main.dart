@@ -399,7 +399,6 @@ class ApiService {
       headers: _authHeaders,
     );
     final result = await _handleResponse(response);
-    if (result is List) return result;
     return result['data'] ?? result['foods'] ?? [];
   }
 
@@ -430,7 +429,6 @@ class ApiService {
       headers: _authHeaders,
     );
     final result = await _handleResponse(response);
-    if (result is List) return result;
     return result['data'] ?? result['allergies'] ?? [];
   }
 
