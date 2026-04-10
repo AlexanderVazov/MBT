@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -219,7 +218,8 @@ class SettingsManager {
 
 // API Service - Handles all backend API calls
 class ApiService {
-  static const String baseUrl = 'https://my-bat.stamsoft.com/api';
+  static const String baseUrl =
+      'https://bdad-2a01-5a8-307-c9c-7c13-b42e-edb9-2980.ngrok-free.app/api';
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
@@ -233,6 +233,40 @@ class ApiService {
     'Authorization': 'Bearer ${SettingsManager().accessToken}',
   };
 
+  dynamic _tryDecodeJson(String responseBody) {
+    if (responseBody.isEmpty) return {};
+    try {
+      return jsonDecode(responseBody);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _extractErrorMessage(http.Response response, dynamic body) {
+    if (body is Map<String, dynamic>) {
+      final message = body['message'] ?? body['error'] ?? body['detail'];
+      if (message is List) return message.join(', ');
+      if (message != null) return message.toString();
+    }
+
+    if (body is List && body.isNotEmpty) {
+      return body.join(', ');
+    }
+
+    final rawBody = response.body.trim();
+    final lowered = rawBody.toLowerCase();
+    if (rawBody.contains('ERR_NGROK_3200') ||
+        (lowered.contains('ngrok') && lowered.contains('offline'))) {
+      return 'Backend tunnel is offline. Start ngrok again and update the app base URL if it changed.';
+    }
+
+    if (rawBody.isNotEmpty) {
+      return rawBody.split('\n').first.trim();
+    }
+
+    return 'An error occurred';
+  }
+
   Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
     debugPrint('📡 API Response [${response.statusCode}]: ${response.body}');
     
@@ -245,14 +279,14 @@ class ApiService {
       throw ApiException('Token refreshed, please retry.', 401, shouldRetry: true);
     }
 
-    final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+    final body = _tryDecodeJson(response.body);
     
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body is Map<String, dynamic> ? body : {'data': body};
     }
     
-    final message = body['message'] ?? 'An error occurred';
-    throw ApiException(message is List ? message.join(', ') : message.toString(), response.statusCode);
+    final message = _extractErrorMessage(response, body);
+    throw ApiException(message, response.statusCode);
   }
 
   // Auth endpoints
@@ -307,7 +341,11 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
+        final body = _tryDecodeJson(response.body);
+        if (body is! Map<String, dynamic>) {
+          debugPrint('❌ Invalid refresh token response format');
+          return false;
+        }
         SettingsManager().updateTokens(
           accessToken: body['accessToken'],
           refreshToken: body['refreshToken'],
@@ -739,7 +777,7 @@ void main() async {
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class MyApp extends StatefulWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
   
   static void setLocale(BuildContext context, Locale newLocale) {
     _MyAppState? state = context.findAncestorStateOfType<_MyAppState>();
@@ -849,7 +887,7 @@ class MainScreen extends StatefulWidget {
   final int initialTab;
   final String? pendingInviteToken;
   
-  const MainScreen({Key? key, this.initialTab = 0, this.pendingInviteToken}) : super(key: key);
+  const MainScreen({super.key, this.initialTab = 0, this.pendingInviteToken});
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
@@ -918,7 +956,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class BluetoothConnectionPage extends StatefulWidget {
-  const BluetoothConnectionPage({Key? key}) : super(key: key);
+  const BluetoothConnectionPage({super.key});
   @override
   State<BluetoothConnectionPage> createState() => _BluetoothConnectionPageState();
 }
@@ -1620,7 +1658,7 @@ class WiFiSetupPage extends StatefulWidget {
   final BluetoothConnection connection;
   final Stream<Uint8List> inputStream;
   final BluetoothDevice device;
-  const WiFiSetupPage({Key? key, required this.connection, required this.inputStream, required this.device}) : super(key: key);
+  const WiFiSetupPage({super.key, required this.connection, required this.inputStream, required this.device});
 
   @override
   State<WiFiSetupPage> createState() => _WiFiSetupPageState();
@@ -1804,7 +1842,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${localizations.translate('piResponse')}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(localizations.translate('piResponse'), style: const TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Text(_response, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
                   ],
@@ -1818,7 +1856,7 @@ class _WiFiSetupPageState extends State<WiFiSetupPage> {
 }
 
 class TextBoxPage extends StatefulWidget {
-  const TextBoxPage({Key? key}) : super(key: key);
+  const TextBoxPage({super.key});
   @override
   State<TextBoxPage> createState() => _TextBoxPageState();
 }
@@ -1998,8 +2036,8 @@ class _TextBoxPageState extends State<TextBoxPage> {
         final name = (item['name'] ?? '').toString();
         return Chip(
           label: Text(name),
-          backgroundColor: color.withOpacity(0.15),
-          side: BorderSide(color: color.withOpacity(0.4)),
+          backgroundColor: color.withValues(alpha: 0.15),
+          side: BorderSide(color: color.withValues(alpha: 0.4)),
           deleteIcon: Icon(Icons.close, size: 16, color: color),
           onDeleted: () => onDelete(item),
         );
@@ -2059,7 +2097,7 @@ class _TextBoxPageState extends State<TextBoxPage> {
 }
 
 class EmptyPage extends StatefulWidget {
-  const EmptyPage({Key? key}) : super(key: key);
+  const EmptyPage({super.key});
   @override
   State<EmptyPage> createState() => _EmptyPageState();
 }
@@ -2248,7 +2286,7 @@ class _EmptyPageState extends State<EmptyPage> {
 class LoginPage extends StatefulWidget {
   final String? pendingInviteToken;
   
-  const LoginPage({Key? key, this.pendingInviteToken}) : super(key: key);
+  const LoginPage({super.key, this.pendingInviteToken});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -2482,7 +2520,7 @@ class _LoginPageState extends State<LoginPage> {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 20,
                           spreadRadius: 5,
                         ),
@@ -2516,7 +2554,7 @@ class _LoginPageState extends State<LoginPage> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 10,
                           spreadRadius: 2,
                         ),
@@ -2729,7 +2767,7 @@ class _LoginPageState extends State<LoginPage> {
 
 // Manage Users Page (for relatives only)
 class ManageUsersPage extends StatefulWidget {
-  const ManageUsersPage({Key? key}) : super(key: key);
+  const ManageUsersPage({super.key});
 
   @override
   State<ManageUsersPage> createState() => _ManageUsersPageState();
@@ -3124,7 +3162,7 @@ class _ManageUsersPageState extends State<ManageUsersPage> {
 class AcceptInvitePage extends StatefulWidget {
   final String? pendingToken;
   
-  const AcceptInvitePage({Key? key, this.pendingToken}) : super(key: key);
+  const AcceptInvitePage({super.key, this.pendingToken});
 
   @override
   State<AcceptInvitePage> createState() => _AcceptInvitePageState();
